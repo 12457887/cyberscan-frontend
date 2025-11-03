@@ -10,7 +10,7 @@ export async function GET(
 
     // 🔹 Appelle ton backend (FastAPI)
     const headers: Record<string, string> = {};
-    const backendKey = process.env.BACKEND_API_KEY;
+    const backendKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
     if (backendKey) headers['x-backend-api-key'] = backendKey;
 
     const { searchParams } = new URL(req.url);

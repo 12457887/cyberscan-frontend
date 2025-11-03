@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     if (concurrency) headers['x-max-concurrent-scans'] = concurrency;
 
     // Add backend API key header (server-side env) so backend can verify requests
-    const backendKey = process.env.BACKEND_API_KEY;
+    const backendKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
     if (backendKey) {
       headers['x-backend-api-key'] = backendKey;
     }

@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     const auth = req.headers.get('authorization');
     if (auth) headers['authorization'] = auth;
     // Attach backend API key from server env so backend only accepts requests with this key
-    const backendKey = process.env.BACKEND_API_KEY;
+    const backendKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
     if (backendKey) {
       headers['x-backend-api-key'] = backendKey;
     }

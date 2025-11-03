@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     if (auth) headers['authorization'] = auth;
 
     // Ajouter la clé backend (authentifie le proxy côté serveur)
-    const backendKey = process.env.BACKEND_API_KEY;
+    const backendKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
     if (backendKey) {
       headers['x-backend-api-key'] = backendKey;
     }
