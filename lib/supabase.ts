@@ -23,6 +23,7 @@ export type Subscription = {
   started_at: string;
   expires_at: string | null;
   created_at: string;
+  updated_at: string | null;
 };
 
 export type Credits = {
@@ -43,6 +44,7 @@ export type Scan = {
   scan_type: 'light' | 'complete';
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
   risk_level: 'low' | 'medium' | 'high' | 'critical' | null;
+  cms_type: string | null;
   vulnerabilities_count: number;
   mongo_report_id: string | null;
   started_at: string;
@@ -68,4 +70,35 @@ export type Alert = {
   severity: 'info' | 'warning' | 'error';
   is_read: boolean;
   created_at: string;
+};
+
+export type Ticket = {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string;
+  status: 'open' | 'in_progress' | 'resolved' | 'closed';
+  priority: 'low' | 'medium' | 'high';
+  created_at: string;
+  updated_at: string;
+  profiles?: {
+    email: string | null;
+    full_name: string | null;
+  } | null;
+  creator_email?: string | null;
+};
+
+export type ScheduledScan = {
+  id: string;
+  user_id: string;
+  site_url: string;
+  site_name?: string | null;
+  scan_type: 'light' | 'complete';
+  frequency: 'weekly' | 'monthly';
+  next_scan_date: string;
+  last_scan_date: string | null;
+  is_active: boolean;
+  is_running: boolean;
+  created_at: string;
+  updated_at: string;
 };

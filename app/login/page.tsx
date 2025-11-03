@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, Loader2 } from 'lucide-react';
+import { Shield, Loader2, LogIn } from 'lucide-react';
 import Link from 'next/link';
 
 export default function LoginPage() {
@@ -15,7 +15,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { signIn } = useAuth();
+  const [oauthLoading, setOauthLoading] = useState(false);
+  const { signIn, signInWithGoogle } = useAuth();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -30,6 +31,20 @@ export default function LoginPage() {
       setLoading(false);
     } else {
       router.push('/dashboard');
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setOauthLoading(true);
+    const { error } = await signInWithGoogle();
+    if (error) {
+      const message =
+        error.message && error.message.includes('provider is not enabled')
+          ? 'La connexion Google n\'est pas encore activée. Contactez un administrateur.'
+          : error.message || 'Erreur lors de la connexion Google';
+      setError(message);
+      setOauthLoading(false);
     }
   };
 
@@ -69,6 +84,11 @@ export default function LoginPage() {
                 required
               />
             </div>
+            <div className="text-right text-sm">
+              <Link href="/forgot-password" className="text-blue-600 hover:underline font-medium">
+                Mot de passe oublié ?
+              </Link>
+            </div>
             {error && (
               <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">
                 {error}
@@ -82,6 +102,35 @@ export default function LoginPage() {
                 </>
               ) : (
                 'Se connecter'
+              )}
+            </Button>
+            <div className="relative py-2">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-slate-200" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-2 text-slate-500">ou</span>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={handleGoogleSignIn}
+              disabled={oauthLoading}
+            >
+              {oauthLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Connexion...
+                </>
+              ) : (
+                <>
+                  <span className="mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-bold text-red-500">
+                    G
+                  </span>
+                  Continuer avec Google
+                </>
               )}
             </Button>
           </form>

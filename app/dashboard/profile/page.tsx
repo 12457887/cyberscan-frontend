@@ -15,7 +15,12 @@ export default function ProfilePage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
+  const [profileMessage, setProfileMessage] = useState('');
+
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState('');
 
   useEffect(() => {
     if (profile) {
@@ -29,7 +34,7 @@ export default function ProfilePage() {
     if (!user) return;
 
     setLoading(true);
-    setMessage('');
+    setProfileMessage('');
 
     try {
       const { error } = await supabase
@@ -42,12 +47,44 @@ export default function ProfilePage() {
 
       if (error) throw error;
 
-      setMessage('Profil mis à jour avec succès !');
+      setProfileMessage('Profil mis à jour avec succès !');
     } catch (error) {
       console.error('Error updating profile:', error);
-      setMessage('Erreur lors de la mise à jour du profil');
+      setProfileMessage('Erreur lors de la mise à jour du profil');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    setPasswordMessage('');
+
+    if (!newPassword || newPassword.length < 8) {
+      setPasswordMessage('Le mot de passe doit contenir au moins 8 caractères.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage('Les mots de passe ne correspondent pas.');
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+
+      setPasswordMessage('Mot de passe mis à jour avec succès.');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error) {
+      console.error('Error updating password:', error);
+      setPasswordMessage('Impossible de mettre à jour le mot de passe.');
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -96,13 +133,13 @@ export default function ProfilePage() {
                 <p className="text-xs text-slate-500">L'email ne peut pas être modifié</p>
               </div>
 
-              {message && (
+              {profileMessage && (
                 <div className={`text-sm p-3 rounded-md ${
-                  message.includes('succès')
+                  profileMessage.includes('succès')
                     ? 'text-green-700 bg-green-50'
                     : 'text-red-700 bg-red-50'
                 }`}>
-                  {message}
+                  {profileMessage}
                 </div>
               )}
 
@@ -122,25 +159,54 @@ export default function ProfilePage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Informations du compte</CardTitle>
+            <CardTitle>Mettre à jour le mot de passe</CardTitle>
+            <CardDescription>Choisissez un nouveau mot de passe sécurisé</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between py-2 border-b">
-              <span className="text-slate-600">Rôle</span>
-              <span className="font-medium capitalize">{profile?.role}</span>
-            </div>
-            <div className="flex justify-between py-2 border-b">
-              <span className="text-slate-600">Date d'inscription</span>
-              <span className="font-medium">
-                {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('fr-FR') : '-'}
-              </span>
-            </div>
-            <div className="flex justify-between py-2">
-              <span className="text-slate-600">Dernière mise à jour</span>
-              <span className="font-medium">
-                {profile?.updated_at ? new Date(profile.updated_at).toLocaleDateString('fr-FR') : '-'}
-              </span>
-            </div>
+          <CardContent>
+            <form onSubmit={handleUpdatePassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="newPassword">Nouveau mot de passe</Label>
+                <Input
+                  id="newPassword"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="********"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="********"
+                />
+              </div>
+
+              {passwordMessage && (
+                <div className={`text-sm p-3 rounded-md ${
+                  passwordMessage.includes('succès')
+                    ? 'text-green-700 bg-green-50'
+                    : 'text-red-700 bg-red-50'
+                }`}>
+                  {passwordMessage}
+                </div>
+              )}
+
+              <Button type="submit" disabled={passwordLoading}>
+                {passwordLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Mise à jour...
+                  </>
+                ) : (
+                  'Mettre à jour le mot de passe'
+                )}
+              </Button>
+            </form>
           </CardContent>
         </Card>
       </div>

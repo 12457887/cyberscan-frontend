@@ -2,17 +2,34 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { Shield, Home, Scan, FileText, CreditCard, User, Bell, LogOut, Menu, X, Settings } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { Shield, Home, Scan, FileText, CreditCard, User, Bell, LogOut, Menu, X, Settings, Search } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useSubscriptionPlan } from '@/hooks/use-subscription-plan';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, profile, loading, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { plan } = useSubscriptionPlan();
+  const planLabel = useMemo(() => {
+    switch (plan) {
+      case 'free':
+        return 'Abonnement Gratuit';
+      case 'basic':
+        return 'Abonnement Basic';
+      case 'pro':
+        return 'Abonnement Pro';
+      case 'admin':
+        return 'Abonnement Admin';
+      default:
+        return null;
+    }
+  }, [plan]);
+
 
   useEffect(() => {
     if (!loading && !user) {
@@ -38,15 +55,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navigation = [
     { name: 'Tableau de bord', href: '/dashboard', icon: Home },
     { name: 'Nouveau Scan', href: '/dashboard/scan', icon: Scan },
+    { name: 'Mes scans', href: '/dashboard/reports', icon: FileText },
     { name: 'Détection', href: '/dashboard/detection', icon: Shield },
-    { name: 'Rapports', href: '/dashboard/reports', icon: FileText },
+    { name: 'Analyseur', href: '/dashboard/analyzer', icon: Search },
     { name: 'Abonnement', href: '/dashboard/subscription', icon: CreditCard },
     { name: 'Profil', href: '/dashboard/profile', icon: User },
+    { name: 'Support Technique', href: '/dashboard?section=support', icon: User },
   ];
 
   const adminNavigation = [
     { name: 'Administration', href: '/admin', icon: Settings },
   ];
+
+  const effectivePlan = plan ?? (profile?.role === 'admin' ? 'admin' : 'free');
+
+  const shouldDisplayNavItem = (href: string) => {
+    if (profile?.role === 'admin' || effectivePlan === 'admin') {
+      return true;
+    }
+    if (effectivePlan === 'free') {
+      return href !== '/dashboard/analyzer' && href !== '/dashboard/detection';
+    }
+    if (effectivePlan === 'basic') {
+      return href !== '/dashboard/analyzer';
+    }
+    return true;
+  };
+
+  const filteredNavigation = navigation.filter((item) => shouldDisplayNavItem(item.href));
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -66,8 +102,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <Bell className="w-5 h-5" />
                 </Link>
               </Button>
-              <div className="text-sm text-slate-600">
-                {profile?.full_name}
+              <div className="flex flex-col items-end text-sm text-slate-600">
+                <span>{profile?.full_name}</span>
+                {planLabel && <span className="text-xs font-medium text-green-600">{planLabel}</span>}
               </div>
               {profile?.role === 'admin' && (
                 <Badge variant="secondary">Admin</Badge>
@@ -88,7 +125,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-slate-200">
             <div className="px-2 pt-2 pb-3 space-y-1">
-              {navigation.map((item) => (
+              {filteredNavigation.map((item) => (
                 <Link
                   key={item.name}
                   href={item.href}
@@ -113,7 +150,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <aside className="hidden md:flex md:flex-shrink-0">
           <div className="flex flex-col w-64 bg-white border-r border-slate-200 h-[calc(100vh-4rem)] sticky top-16">
             <nav className="flex-1 px-4 py-6 space-y-1">
-              {navigation.map((item) => {
+              {filteredNavigation.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
                 return (

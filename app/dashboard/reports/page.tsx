@@ -25,11 +25,13 @@ export default function ReportsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
-  if (user) {
-    const interval = setInterval(loadReports, 10000); // toutes les 10s
+    if (!user) return;
+
+    loadReports();
+
+    const interval = setInterval(loadReports, 30000);
     return () => clearInterval(interval);
-  }
-}, [user]);
+  }, [user]);
 
   const loadReports = async () => {
     if (!user) return;
@@ -44,15 +46,29 @@ export default function ReportsPage() {
       if (scansData) {
         setScans(scansData);
 
-        for (const scan of scansData) {
-          const { data: vulnData } = await supabase
+        const completedScans = scansData.filter(scan => scan.status === 'completed');
+        const scanIds = completedScans.map(scan => scan.id);
+
+        if (scanIds.length) {
+          const { data: vulnRows, error: vulnError } = await supabase
             .from('vulnerabilities')
             .select('*')
-            .eq('scan_id', scan.id);
+            .in('scan_id', scanIds);
 
-          if (vulnData) {
-            setVulnerabilities(prev => ({ ...prev, [scan.id]: vulnData }));
+          if (vulnError) {
+            console.error('Error loading vulnerabilities:', vulnError);
+          } else if (vulnRows) {
+            const grouped: { [key: string]: Vulnerability[] } = {};
+            vulnRows.forEach((row) => {
+              if (!grouped[row.scan_id]) {
+                grouped[row.scan_id] = [];
+              }
+              grouped[row.scan_id].push(row);
+            });
+            setVulnerabilities(grouped);
           }
+        } else {
+          setVulnerabilities({});
         }
       }
     } catch (error) {
@@ -82,24 +98,26 @@ export default function ReportsPage() {
     }
   };
 
-  const getRiskBadge = (risk: string | null) => {
-    switch (risk) {
-      case 'critical': return <Badge variant="destructive">Critique</Badge>;
-      case 'high': return <Badge className="bg-orange-500">Élevé</Badge>;
-      case 'medium': return <Badge className="bg-yellow-500 text-black">Moyen</Badge>;
-      case 'low': return <Badge className="bg-green-500">Faible</Badge>;
-      default: return <Badge variant="secondary">N/A</Badge>;
-    }
-  };
-const handleDownloadReport = async (scan: Scan) => {
+const getRiskBadge = (risk: string | null) => {
+  switch (risk) {
+    case 'critical': return <Badge variant="destructive">Critique</Badge>;
+    case 'high': return <Badge className="bg-orange-500">Élevé</Badge>;
+    case 'medium': return <Badge className="bg-yellow-500 text-black">Moyen</Badge>;
+    case 'low': return <Badge className="bg-green-500">Faible</Badge>;
+    default: return <Badge variant="secondary">N/A</Badge>;
+  }
+};
+
+type ReportFormat = 'pdf' | 'json' | 'xlsx';
+
+const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') => {
   if (!scan.mongo_report_id) {
     alert("Rapport non disponible. Lancez un scan d'abord.");
     return;
   }
 
   try {
-    // ✅ On passe par le proxy Next.js
-    const apiUrl = `/api/generate-report/${scan.mongo_report_id}`;
+    const apiUrl = `/api/generate-report/${scan.mongo_report_id}?report_format=${format}`;
     const response = await fetch(apiUrl);
 
     if (!response.ok) throw new Error("Erreur lors du téléchargement du rapport");
@@ -108,9 +126,9 @@ const handleDownloadReport = async (scan: Scan) => {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `rapport-${scan.site_name}-${new Date()
-      .toISOString()
-      .split("T")[0]}.pdf`;
+    const timestamp = new Date().toISOString().split("T")[0];
+    const extension = format === 'xlsx' ? 'xlsx' : format === 'json' ? 'json' : 'pdf';
+    link.download = `rapport-${scan.site_name}-${timestamp}.${extension}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -141,7 +159,7 @@ const handleDownloadReport = async (scan: Scan) => {
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Rapports</h1>
+          <h1 className="text-3xl font-bold text-slate-900"> Mes scan</h1>
           <p className="text-slate-600 mt-1">Consultez et téléchargez vos rapports de scan</p>
         </div>
 
@@ -196,7 +214,7 @@ const handleDownloadReport = async (scan: Scan) => {
                           </div>
                         </div>
                         {scan.status === 'completed' && (
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap justify-end">
                             <Button
                               variant="outline"
                               size="sm"
@@ -206,13 +224,29 @@ const handleDownloadReport = async (scan: Scan) => {
                               Détails
                             </Button>
                             <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownloadReport(scan, 'json')}
+                              disabled={!scan.mongo_report_id}
+                            >
+                              JSON
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownloadReport(scan, 'xlsx')}
+                              disabled={!scan.mongo_report_id}
+                            >
+                              XLSX
+                            </Button>
+                            <Button
                               variant="default"
                               size="sm"
-                              onClick={() => handleDownloadReport(scan)}
+                              onClick={() => handleDownloadReport(scan, 'pdf')}
                               disabled={!scan.mongo_report_id}
                             >
                               <Download className="w-4 h-4 mr-1" />
-                              Télécharger
+                              PDF
                             </Button>
                           </div>
                         )}

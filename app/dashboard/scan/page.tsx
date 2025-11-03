@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,18 +8,113 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Zap, Shield, Loader2 } from 'lucide-react';
+import { Zap, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import { Progress } from '@/components/ui/progress';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+
+const DISABLE_CREDIT_CHECK = process.env.NEXT_PUBLIC_DISABLE_CREDITS === 'true'; // permet de désactiver la vérif en dev
+
+const PLAN_CONCURRENCY: Record<string, number> = {
+  free: 1,
+  basic: 1,
+  pro: 5,
+  enterprise: 10,
+};
+
+// --- Types for scan payload ---
+type SiteWithCMS = {
+  url: string;
+  mode: 'light' | 'complete';
+  scan_id: string | null;
+  frontend_scan_id: string | null;
+  user_id: string;
+  cms?: 'wordpress' | 'drupal' | 'prestashop' | 'inconnu';
+};
 
 export default function ScanPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const router = useRouter();
   const [siteName, setSiteName] = useState('');
   const [siteUrl, setSiteUrl] = useState('');
   const [scanType, setScanType] = useState<'light' | 'complete'>('light');
+  const [cmsType, setCmsType] = useState<'wordpress' | 'drupal' | 'prestashop' | 'inconnu'>('inconnu');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [scanProgress, setScanProgress] = useState(0);
+  const [planType, setPlanType] = useState<string>('free');
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleFrequency, setScheduleFrequency] = useState<'none' | 'weekly' | 'monthly'>('none');
+  const [scheduleStartAt, setScheduleStartAt] = useState('');
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startProgress = () => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+
+    setScanProgress(1);
+    const interval = setInterval(() => {
+      setScanProgress((prev) => {
+        if (prev >= 95) return prev;
+        const next = prev + Math.random() * 7;
+        return next >= 95 ? 95 : next;
+      });
+    }, 600);
+
+    progressIntervalRef.current = interval;
+  };
+
+  const stopProgress = (completed: boolean) => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+
+    setScanProgress(completed ? 100 : 0);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    if (profile?.role === 'admin') {
+      setPlanType('enterprise');
+      return;
+    }
+
+    supabase
+      .from('subscriptions')
+      .select('plan_type')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('Impossible de récupérer le plan:', error);
+          return;
+        }
+        if (data?.plan_type) {
+          setPlanType(data.plan_type);
+        }
+      });
+  }, [user, profile?.role]);
+
+  useEffect(() => {
+    if (planType === 'free' || planType === 'basic') {
+      setScheduleEnabled(false);
+      setScheduleFrequency('none');
+      setScheduleStartAt('');
+    }
+  }, [planType]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,12 +122,92 @@ export default function ScanPage() {
 
     setError('');
     setLoading(true);
+    startProgress();
 
     try {
-      const TEST_MODE = true; // désactive le système de crédits pour test
-      let creditsData = { remaining_credits: 1, used_credits: 0 };
+      const concurrencyLimit = PLAN_CONCURRENCY[planType] ?? 1;
 
-      if (!TEST_MODE) {
+      if (planType === 'free' && scanType === 'complete') {
+        setError('Le plan Gratuit ne permet pas les scans complets.');
+        setLoading(false);
+        stopProgress(false);
+        return;
+      }
+
+      if (scheduleEnabled && !canSchedule) {
+        setError('La planification automatique est réservée aux plans Pro et Enterprise.');
+        setLoading(false);
+        stopProgress(false);
+        return;
+      }
+
+      if (scheduleEnabled && scheduleFrequency === 'none') {
+        setError('Sélectionnez une fréquence pour la planification.');
+        setLoading(false);
+        stopProgress(false);
+        return;
+      }
+
+      let scheduleStartIso: string | null = null;
+      if (scheduleEnabled && scheduleFrequency !== 'none') {
+        if (!scheduleStartAt) {
+          setError('Merci de préciser la date de premier lancement pour la planification.');
+          setLoading(false);
+          stopProgress(false);
+          return;
+        }
+        const parsedStart = new Date(scheduleStartAt);
+        if (Number.isNaN(parsedStart.getTime())) {
+          setError('Date de planification invalide.');
+          setLoading(false);
+          stopProgress(false);
+          return;
+        }
+        scheduleStartIso = parsedStart.toISOString();
+      }
+      const rawEntries = siteUrl
+        .split(/\r?\n|,|;/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+
+      if (rawEntries.length === 0) {
+        throw new Error('Veuillez saisir au moins une URL.');
+      }
+
+      if (concurrencyLimit <= 1 && rawEntries.length > 1) {
+        setError('Votre abonnement permet un seul scan à la fois.');
+        setLoading(false);
+        stopProgress(false);
+        return;
+      }
+
+      if (rawEntries.length > concurrencyLimit) {
+        setError(`Votre plan autorise au maximum ${concurrencyLimit} scans simultanés. Réduisez la liste ou passez à un plan supérieur.`);
+        setLoading(false);
+        stopProgress(false);
+        return;
+      }
+
+      const normalizedUrls: string[] = [];
+      for (const entry of rawEntries) {
+        let candidate = entry;
+        if (!/^https?:\/\//i.test(candidate)) {
+          candidate = `https://${candidate}`;
+        }
+        try {
+          const url = new URL(candidate);
+          normalizedUrls.push(url.toString());
+        } catch (err) {
+          setError(`URL invalide: ${entry}`);
+          setLoading(false);
+          stopProgress(false);
+          return;
+        }
+      }
+
+      let creditsData = { remaining_credits: 0, used_credits: 0 };
+
+      if (!DISABLE_CREDIT_CHECK) {
         const { data } = await supabase
           .from('credits')
           .select('remaining_credits, used_credits')
@@ -41,66 +216,122 @@ export default function ScanPage() {
 
         creditsData = data || { remaining_credits: 0, used_credits: 0 };
 
-        if (!creditsData || creditsData.remaining_credits < 1) {
-          setError('Crédits insuffisants. Veuillez améliorer votre abonnement.');
+        if (!creditsData || (creditsData.remaining_credits || 0) < normalizedUrls.length) {
+          setError('Crédits insuffisants pour lancer cette série de scans.');
           setLoading(false);
+          stopProgress(false);
           return;
         }
       }
 
-      // === 🔹 Crée une entrée du scan dans Supabase
-      const { data: scanData, error: scanError } = await supabase
-        .from('scans')
-        .insert({
+      const trimmedSiteName = siteName.trim();
+      const displayNames: string[] = [];
+      const scanInserts = normalizedUrls.map((url, index) => {
+        const host = new URL(url).hostname;
+        const derivedName =
+          normalizedUrls.length === 1
+            ? trimmedSiteName || host
+            : trimmedSiteName
+              ? `${trimmedSiteName} #${index + 1}`
+              : host;
+        displayNames.push(derivedName);
+        return {
           user_id: user.id,
-          site_name: siteName,
-          site_url: siteUrl,
+          site_name: derivedName,
+          site_url: url,
           scan_type: scanType,
           status: 'pending',
-        })
-        .select()
-        .single();
+        };
+      });
 
-      if (scanError) throw scanError;
+      const { data: scanRows, error: scanError } = await supabase
+        .from('scans')
+        .insert(scanInserts)
+        .select();
 
-      // 🔹 Si mode réel, décrémente les crédits
-      if (!TEST_MODE) {
+      if (scanError || !scanRows || scanRows.length === 0) {
+        throw scanError || new Error('Impossible de créer les enregistrements de scan.');
+      }
+
+      if (!DISABLE_CREDIT_CHECK) {
         await supabase
           .from('credits')
           .update({
-            used_credits: (creditsData.used_credits || 0) + 1,
-            remaining_credits: creditsData.remaining_credits - 1,
+            used_credits: (creditsData.used_credits || 0) + normalizedUrls.length,
             updated_at: new Date().toISOString(),
           })
           .eq('user_id', user.id);
       }
 
-      // 🔹 Ajoute une alerte utilisateur
-      await supabase.from('alerts').insert({
-        user_id: user.id,
-        scan_id: scanData.id,
-        title: 'Scan lancé',
-        message: `Le scan de ${siteName} a été lancé avec succès.`,
-        type: 'system',
-        severity: 'info',
-      });
+      await supabase.from('alerts').insert(
+        scanRows.map((row, index) => ({
+          user_id: user.id,
+          scan_id: row.id,
+          title: 'Scan lancé',
+          message: `Le scan de ${displayNames[index]} (${row.site_url}) a été lancé avec succès.`,
+          type: 'system',
+          severity: 'info',
+        }))
+      );
 
-      // === 🔹 Envoie la requête au backend FastAPI
+      if (scheduleEnabled && scheduleFrequency !== 'none' && scheduleStartIso) {
+        const scheduleRows = scanRows.map((row, index) => ({
+          user_id: user.id,
+          site_url: row.site_url,
+          site_name: displayNames[index],
+          scan_type: scanType,
+          frequency: scheduleFrequency,
+          next_scan_date: scheduleStartIso,
+          last_scan_date: null,
+          is_active: true,
+          is_running: false,
+        }));
+
+        const { error: scheduleError } = await supabase.from('scheduled_scans').insert(scheduleRows);
+
+        if (scheduleError) {
+          console.error('Erreur planification:', scheduleError);
+          setError('Le scan a été lancé, mais la planification automatique n\'a pas pu être enregistrée.');
+        } else {
+          await supabase.from('alerts').insert({
+            user_id: user.id,
+            scan_id: null,
+            title: 'Planification confirmée',
+            message:
+              scheduleFrequency === 'weekly'
+                ? 'Vos scans seront répétés chaque semaine automatiquement.'
+                : 'Vos scans seront répétés chaque mois automatiquement.',
+            type: 'system',
+            severity: 'info',
+          });
+        }
+      }
+
       const API_BASE = window.location.origin + '/api';
-      const siteList = [
-        {
-          url: siteUrl,
-          mode: scanType,
-           scan_id: scanData.id,
-           frontend_scan_id: scanData.id,
-          user_id: user.id,     // 🔹 On passe l’ID Supabase au backend
-        },
-      ];
 
-      const response = await fetch(`${API_BASE}/scan-auto`, {
+      const basePayload = scanRows.map((row) => ({
+        url: row.site_url,
+        mode: scanType,
+        scan_id: row.id,
+        frontend_scan_id: row.id,
+        user_id: user.id,
+      }));
+
+      let endpoint = `${API_BASE}/scan-auto-detect`;
+      let bodyPayload = basePayload;
+
+      if (cmsType && cmsType !== 'inconnu') {
+        endpoint = `${API_BASE}/scan-auto`;
+        bodyPayload = basePayload.map((item) => ({ ...item, cms: cmsType }));
+      }
+
+      const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(siteList),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Max-Concurrent-Scans': concurrencyLimit.toString(),
+        },
+        body: JSON.stringify(bodyPayload),
       });
 
       if (!response.ok) {
@@ -108,32 +339,56 @@ export default function ScanPage() {
         console.error('Erreur API FastAPI:', text);
         throw new Error('Échec du lancement du scan.');
       }
+
       const result = await response.json();
 
-      // 🔹 Si backend renvoie un scan_id, on le stocke pour traçabilité
-      if (result?.scan_ids?.[0]) {
-        await supabase
-          .from('scans')
-          .update({ backend_scan_id: result.scan_ids[0] })
-          .eq('id', scanData.id);
+      if (Array.isArray(result?.scan_ids) && result.scan_ids.length > 0) {
+        const uniqueIds = (result.scan_ids as string[]).filter(
+          (id, index, arr) => arr.indexOf(id) === index
+        );
+        await Promise.all(
+          uniqueIds.map((scanId) =>
+            supabase
+              .from('scans')
+              .update({ backend_scan_id: scanId })
+              .eq('id', scanId)
+          )
+        );
       }
 
+      stopProgress(true);
       // ✅ Redirection vers la page des rapports
       router.push('/dashboard/reports');
     } catch (err) {
       console.error('Error starting scan:', err);
       setError('Une erreur est survenue lors du lancement du scan.');
+      stopProgress(false);
     } finally {
       setLoading(false);
     }
   };
 
+  const canSchedule = planType === 'pro' || planType === 'enterprise';
+  const minScheduleValue = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
+
   return (
     <DashboardLayout>
       <div className="max-w-2xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Nouveau Scan</h1>
-          <p className="text-slate-600 mt-1">Lancez une analyse de sécurité de votre site web</p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Nouveau Scan</h1>
+            <p className="text-slate-600 mt-1">Lancez une analyse de sécurité de votre site web</p>
+          </div>
+          <Button 
+            variant="outline" 
+            onClick={() => router.push('/dashboard?section=support')}
+            className="flex items-center gap-2"
+          >
+            <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+            Support Technique
+          </Button>
         </div>
 
         <Card>
@@ -153,21 +408,83 @@ export default function ScanPage() {
                   placeholder="Mon Site Web"
                   value={siteName}
                   onChange={(e) => setSiteName(e.target.value)}
-                  required
+                  required={PLAN_CONCURRENCY[planType] <= 1}
                 />
-              </div>
+                </div>
 
               {/* === URL === */}
               <div className="space-y-2">
                 <Label htmlFor="siteUrl">URL du site</Label>
-                <Input
-                  id="siteUrl"
-                  type="url"
-                  placeholder="https://example.com"
-                  value={siteUrl}
-                  onChange={(e) => setSiteUrl(e.target.value)}
-                  required
-                />
+                {PLAN_CONCURRENCY[planType] > 1 ? (
+                  <Textarea
+                    id="siteUrl"
+                    placeholder={`https://example.com\nhttps://example.org`}
+                    value={siteUrl}
+                    onChange={(e) => setSiteUrl(e.target.value)}
+                    className="min-h-[120px]"
+                    required
+                  />
+                ) : (
+                  <Input
+                    id="siteUrl"
+                    type="url"
+                    placeholder="https://example.com"
+                    value={siteUrl}
+                    onChange={(e) => setSiteUrl(e.target.value)}
+                    required
+                  />
+                )}
+                {PLAN_CONCURRENCY[planType] > 1 && (
+                  <p className="text-sm text-slate-500">
+                    Plan {planType}: entrez un domaine par ligne (jusqu'à {PLAN_CONCURRENCY[planType]} scans simultanés).
+                  </p>
+                )}
+              </div>
+
+              {/* === Choix du CMS spécifique (facultatif) === */}
+              <div className="space-y-2">
+                <Label>CMS (optionnel)</Label>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCmsType('wordpress')}
+                    className={`flex-1 p-3 border rounded-lg text-center ${cmsType === 'wordpress' ? 'bg-blue-50 border-blue-300' : 'hover:bg-slate-50'}`}
+                    aria-pressed={cmsType === 'wordpress'}
+                  >
+                    <div className="font-medium">WordPress</div>
+                    <div className="text-xs text-slate-500">CMS spécifique</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setCmsType('drupal')}
+                    className={`flex-1 p-3 border rounded-lg text-center ${cmsType === 'drupal' ? 'bg-blue-50 border-blue-300' : 'hover:bg-slate-50'}`}
+                    aria-pressed={cmsType === 'drupal'}
+                  >
+                    <div className="font-medium">Drupal</div>
+                    <div className="text-xs text-slate-500">CMS spécifique</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setCmsType('prestashop')}
+                    className={`flex-1 p-3 border rounded-lg text-center ${cmsType === 'prestashop' ? 'bg-blue-50 border-blue-300' : 'hover:bg-slate-50'}`}
+                    aria-pressed={cmsType === 'prestashop'}
+                  >
+                    <div className="font-medium">PrestaShop</div>
+                    <div className="text-xs text-slate-500">CMS spécifique</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setCmsType('inconnu')}
+                    className={`flex-1 p-3 border rounded-lg text-center ${cmsType === 'inconnu' ? 'bg-blue-50 border-blue-300' : 'hover:bg-slate-50'}`}
+                    aria-pressed={cmsType === 'inconnu'}
+                  >
+                    <div className="font-medium">Inconnu</div>
+                    <div className="text-xs text-slate-500">Détection automatique</div>
+                  </button>
+                </div>
               </div>
 
               {/* === Type de scan === */}
@@ -192,24 +509,75 @@ export default function ScanPage() {
                       </p>
                     </div>
                   </div>
+                </RadioGroup>
+                <p className="text-sm text-slate-500">
+                  Le scan complet sera bientôt disponible.
+                </p>
+              </div>
 
-                  <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-slate-50 cursor-pointer">
-                    <RadioGroupItem value="complete" id="complete" className="mt-1" />
-                    <div className="flex-1">
-                      <Label htmlFor="complete" className="cursor-pointer flex items-center">
-                        <Shield className="w-4 h-4 mr-2 text-blue-600" />
-                        <span className="font-medium">Scan Complet</span>
+              {canSchedule && (
+                <div className="space-y-4 border rounded-lg p-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <Label className="flex items-center gap-2">
+                        Planification automatique
                       </Label>
-                      <p className="text-sm text-slate-600 mt-1">
-                        Analyse approfondie incluant tests de pénétration et vérifications avancées.
-                      </p>
                       <p className="text-xs text-slate-500 mt-1">
-                        Durée: ~30 minutes | Coût: 1 crédit
+                        Programmez des scans récurrents et recevez les rapports sans action manuelle.
                       </p>
                     </div>
+                    <Switch
+                      checked={scheduleEnabled}
+                      onCheckedChange={(checked) => {
+                        setScheduleEnabled(checked);
+                        if (checked) {
+                          if (scheduleFrequency === 'none') {
+                            setScheduleFrequency('weekly');
+                          }
+                          if (!scheduleStartAt) {
+                            const now = new Date();
+                            const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+                              .toISOString()
+                              .slice(0, 16);
+                            setScheduleStartAt(localIso);
+                          }
+                        } else {
+                          setScheduleFrequency('none');
+                          setScheduleStartAt('');
+                        }
+                      }}
+                      aria-label="Activer la planification automatique"
+                    />
                   </div>
-                </RadioGroup>
-              </div>
+
+                  {scheduleEnabled && (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="scheduleFrequency">Fréquence</Label>
+                        <select
+                          id="scheduleFrequency"
+                          value={scheduleFrequency}
+                          onChange={(e) => setScheduleFrequency(e.target.value as 'weekly' | 'monthly')}
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                        >
+                          <option value="weekly">Hebdomadaire</option>
+                          <option value="monthly">Mensuelle</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="scheduleStart">Première exécution</Label>
+                        <Input
+                          id="scheduleStart"
+                          type="datetime-local"
+                          min={minScheduleValue}
+                          value={scheduleStartAt}
+                          onChange={(e) => setScheduleStartAt(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* === Erreur === */}
               {error && (
@@ -221,12 +589,22 @@ export default function ScanPage() {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Lancement en cours...
+                    Analyse en cours... {Math.round(scanProgress)}%
                   </>
                 ) : (
                   'Lancer le scan'
                 )}
               </Button>
+
+              {loading && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-slate-500">
+                    <span>Progression du scan</span>
+                    <span>{Math.round(scanProgress)}%</span>
+                  </div>
+                  <Progress value={scanProgress} />
+                </div>
+              )}
             </form>
           </CardContent>
         </Card>

@@ -5,16 +5,23 @@ export async function POST(req: Request) {
   try {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
 
-    // Preserve raw body and relevant headers
+    // Read the incoming body and propagate useful headers
     const body = await req.text();
     const headers: Record<string, string> = {};
     const contentType = req.headers.get('content-type');
     if (contentType) headers['content-type'] = contentType;
     const auth = req.headers.get('authorization');
     if (auth) headers['authorization'] = auth;
-  
+    const concurrency = req.headers.get('x-max-concurrent-scans');
+    if (concurrency) headers['x-max-concurrent-scans'] = concurrency;
 
-    const res = await fetch(`${backendUrl}/scan-auto-detect`, {
+    // Add backend API key header (server-side env) so backend can verify requests
+    const backendKey = process.env.BACKEND_API_KEY;
+    if (backendKey) {
+      headers['x-backend-api-key'] = backendKey;
+    }
+
+    const res = await fetch(`${backendUrl}/scan-auto`, {
       method: 'POST',
       headers,
       body,

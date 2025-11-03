@@ -1,13 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase, Subscription } from '@/lib/supabase';
-import { Check, Zap, Shield, Building2, Crown } from 'lucide-react';
+import { Check, Zap, Shield, Building2, Crown, Loader2 } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+
+const ENTERPRISE_PRICE =
+  process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE
+    ? `${process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE}€`
+    : '150€';
 
 const plans = [
   {
@@ -17,12 +23,15 @@ const plans = [
     period: '/mois',
     icon: Zap,
     description: 'Parfait pour découvrir CyberScan',
-    credits: 10,
+    creditsLimit: 10,
+    creditsLabel: '10',
     features: [
       '10 crédits par mois',
       'Scans légers',
       'Rapports basiques',
       'Support par email',
+      '1 scan simultané',
+      'Support via tickets communautaires',
     ],
   },
   {
@@ -32,13 +41,16 @@ const plans = [
     period: '/mois',
     icon: Shield,
     description: 'Pour les petites entreprises',
-    credits: 50,
+    creditsLimit: 50,
+    creditsLabel: '50',
     features: [
       '50 crédits par mois',
       'Scans légers et complets',
       'Rapports détaillés',
       'Support prioritaire',
       'Historique 6 mois',
+      '1 scan simultané',
+      'Support via tickets standard',
     ],
     popular: true,
   },
@@ -49,34 +61,38 @@ const plans = [
     period: '/mois',
     icon: Crown,
     description: 'Pour les professionnels exigeants',
-    credits: 200,
+    creditsLimit: 200,
+    creditsLabel: '200',
     features: [
       '200 crédits par mois',
       'Tous types de scans',
-      'Rapports avancés avec recommandations',
+      'Rapports avancés',
       'Support 24/7',
-      'Historique illimité',
-      'API access',
-      'Alertes en temps réel',
+      'Détection CMS incluse',
+      'Jusqu’à 5 scans simultanés',
+      'Support avancé par tickets',
+      'Planification automatique (hebdo/mensuelle)',
     ],
   },
   {
     id: 'enterprise',
     name: 'Enterprise',
-    price: 'Sur devis',
-    period: '',
+    price: ENTERPRISE_PRICE,
+    period: '/mois',
     icon: Building2,
     description: 'Solutions sur mesure',
-    credits: 999999,
+    creditsLimit: 999999,
+    creditsLabel: 'Illimités',
     features: [
       'Crédits illimités',
-      'Scans personnalisés',
+      'Tous types de scans',
       'Rapports sur mesure',
       'Support dédié',
-      'Intégration personnalisée',
-      'SLA garanti',
-      'Formation incluse',
-      'Audit de sécurité',
+      'Jusqu’à 10 scans simultanés',
+      'Support premium par tickets illimités',
+      'Planification personnalisée des scans',
+      'Détection CMS incluse',
+      'Accès complet à l’analyseur avancé',
     ],
   },
 ];
@@ -85,6 +101,11 @@ export default function SubscriptionPage() {
   const { user } = useAuth();
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [actionLoadingPlan, setActionLoadingPlan] = useState<string | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const handledCheckoutRef = useRef(false);
 
   useEffect(() => {
     if (user) {
@@ -110,30 +131,102 @@ export default function SubscriptionPage() {
     }
   };
 
-  const handleSubscribe = async (planType: string, creditsLimit: number) => {
+  const handleSubscribe = async (
+    planType: string,
+    creditsLimit: number,
+    options?: { silent?: boolean; successMessage?: string }
+  ) => {
     if (!user) return;
 
     try {
-      if (subscription) {
-        await supabase
+      if (!options?.silent) {
+        setStatusMessage(null);
+      }
+      setActionLoadingPlan(planType);
+
+      const now = new Date();
+      const expiresAt =
+        planType === 'enterprise'
+          ? null
+          : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      const nowIso = now.toISOString();
+
+      const {
+        data: existingSubscription,
+        error: fetchSubscriptionError,
+      } = await supabase
+        .from('subscriptions')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (fetchSubscriptionError) throw fetchSubscriptionError;
+
+      if (existingSubscription) {
+        const { error: subscriptionError } = await supabase
           .from('subscriptions')
           .update({
             plan_type: planType,
             credits_limit: creditsLimit,
             status: 'active',
-            started_at: new Date().toISOString(),
-            expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            started_at: nowIso,
+            expires_at: expiresAt,
+            updated_at: nowIso,
           })
           .eq('user_id', user.id);
 
-        await supabase
+        if (subscriptionError) throw subscriptionError;
+      } else {
+        const { error: subscriptionError } = await supabase.from('subscriptions').insert({
+          user_id: user.id,
+          plan_type: planType,
+          credits_limit: creditsLimit,
+          status: 'active',
+          started_at: nowIso,
+          expires_at: expiresAt,
+          created_at: nowIso,
+          updated_at: nowIso,
+        });
+
+        if (subscriptionError) throw subscriptionError;
+      }
+
+      const {
+        data: existingCredits,
+        error: fetchCreditsError,
+      } = await supabase
+        .from('credits')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (fetchCreditsError) throw fetchCreditsError;
+
+      const creditsPayload = {
+        total_credits: creditsLimit,
+        used_credits: 0,
+        last_reset_at: nowIso,
+        updated_at: nowIso,
+      };
+
+      if (existingCredits) {
+        const { error: creditsError } = await supabase
           .from('credits')
-          .update({
-            total_credits: creditsLimit,
-            remaining_credits: creditsLimit,
-            updated_at: new Date().toISOString(),
-          })
+          .update(creditsPayload)
           .eq('user_id', user.id);
+
+        if (creditsError) throw creditsError;
+      } else {
+        const { error: creditsError } = await supabase
+          .from('credits')
+          .insert({
+            user_id: user.id,
+            ...creditsPayload,
+            created_at: nowIso,
+          });
+
+        if (creditsError) throw creditsError;
       }
 
       await supabase.from('alerts').insert({
@@ -145,12 +238,105 @@ export default function SubscriptionPage() {
       });
 
       loadSubscription();
-      alert('Abonnement mis à jour avec succès !');
+      if (!options?.silent) {
+        setStatusMessage({
+          type: 'success',
+          text: options?.successMessage || 'Abonnement mis à jour avec succès !',
+        });
+      }
     } catch (error) {
       console.error('Error updating subscription:', error);
-      alert('Erreur lors de la mise à jour de l\'abonnement');
+      setStatusMessage({
+        type: 'error',
+        text: 'Erreur lors de la mise à jour de l\'abonnement.',
+      });
+    }
+    setActionLoadingPlan(null);
+  };
+
+  const handleStripeCheckout = async (plan: (typeof plans)[number]) => {
+    if (!user) return;
+
+    if (plan.id === 'free') {
+      handleSubscribe(plan.id, plan.creditsLimit, { successMessage: 'Abonnement activé.' });
+      return;
+    }
+
+    if (plan.id === 'enterprise') {
+      handleSubscribe(plan.id, plan.creditsLimit, {
+        successMessage: 'Plan Enterprise activé. Notre équipe vous contactera pour la configuration avancée.',
+      });
+      return;
+    }
+
+    setStatusMessage(null);
+    setActionLoadingPlan(plan.id);
+
+    try {
+      const response = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: plan.id, userId: user.id, email: user.email }),
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || 'Erreur lors de la création de la session Stripe.');
+      }
+
+      const data = await response.json();
+      if (data?.url) {
+        window.location.href = data.url as string;
+        return;
+      }
+
+      throw new Error('URL de redirection Stripe manquante.');
+    } catch (error: any) {
+      console.error('Stripe checkout error:', error);
+      setStatusMessage({
+        type: 'error',
+        text: error?.message || 'Impossible de démarrer le paiement Stripe.',
+      });
+      setActionLoadingPlan(null);
     }
   };
+
+  useEffect(() => {
+    if (!user) return;
+
+    const success = searchParams.get('success');
+    const planParam = searchParams.get('plan');
+    const canceled = searchParams.get('canceled');
+
+    if (!success && !canceled) {
+      handledCheckoutRef.current = false;
+    }
+
+    if (success === 'true' && planParam && !handledCheckoutRef.current) {
+      const planConfig = plans.find((p) => p.id === planParam);
+      if (planConfig) {
+        handledCheckoutRef.current = true;
+        handleSubscribe(planConfig.id, planConfig.creditsLimit, {
+          successMessage: 'Paiement confirmé, votre abonnement est actif.',
+        });
+      }
+    }
+
+    if (canceled === 'true' && !handledCheckoutRef.current) {
+      handledCheckoutRef.current = true;
+      setStatusMessage({ type: 'error', text: 'Paiement annulé.' });
+    }
+
+    if ((success || canceled) && typeof window !== 'undefined') {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete('success');
+      params.delete('canceled');
+      params.delete('plan');
+      params.delete('session_id');
+      const newQuery = params.toString();
+      router.replace(`${window.location.pathname}${newQuery ? `?${newQuery}` : ''}`, { scroll: false });
+    }
+  }, [searchParams, user, router]);
 
   if (loading) {
     return (
@@ -164,56 +350,87 @@ export default function SubscriptionPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-8">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-slate-900">Abonnements</h1>
-          <p className="text-slate-600 mt-2">Choisissez le plan qui correspond à vos besoins</p>
+      <div className="mx-auto max-w-6xl space-y-10 py-10 px-4 lg:px-0">
+        <div className="text-center space-y-3">
+          <Badge variant="outline" className="mx-auto border-blue-200 bg-blue-50 text-blue-700">
+            CyberScan Premium
+          </Badge>
+          <h1 className="text-4xl font-bold text-slate-900">Choisissez votre abonnement</h1>
+          <p className="max-w-2xl mx-auto text-slate-600">
+            Passez au plan qui correspond à vos besoins en sécurité. Crédit mensuel, support prioritaire et fonctionnalités avancées selon votre choix.
+          </p>
         </div>
 
+        {statusMessage && (
+          <div
+            className={`mx-auto max-w-3xl rounded-md border px-4 py-3 text-sm ${
+              statusMessage.type === 'success'
+                ? 'border-green-200 bg-green-50 text-green-700'
+                : 'border-red-200 bg-red-50 text-red-700'
+            }`}
+          >
+            {statusMessage.text}
+          </div>
+        )}
+
         {subscription && (
-          <Card className="max-w-2xl mx-auto">
-            <CardHeader>
-              <CardTitle>Votre abonnement actuel</CardTitle>
-              <CardDescription>
-                Plan: <span className="font-medium capitalize">{subscription.plan_type}</span>
+          <Card className="relative mx-auto max-w-3xl overflow-hidden border-none bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-xl">
+            <span className="absolute top-0 right-0 rounded-bl-md bg-blue-600 px-3 py-1 text-xs font-semibold uppercase">
+              Plan actuel
+            </span>
+            <CardHeader className="space-y-2">
+              <CardTitle className="text-2xl font-semibold">
+                Abonnement {subscription.plan_type.charAt(0).toUpperCase() + subscription.plan_type.slice(1)}
+              </CardTitle>
+              <CardDescription className="text-slate-200/80">
+                Gérez votre plan directement depuis cette page. Vous pouvez évoluer vers un plan supérieur à tout moment.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-sm text-slate-600">Statut</p>
-                  <Badge className={subscription.status === 'active' ? 'bg-green-600' : ''}>
-                    {subscription.status === 'active' ? 'Actif' : subscription.status}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-sm text-slate-600">Crédits mensuels</p>
-                  <p className="font-medium text-lg">{subscription.credits_limit}</p>
-                </div>
+            <CardContent className="grid gap-6 md:grid-cols-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-300">Statut</p>
+                <Badge className={`mt-2 border border-white/20 ${subscription.status === 'active' ? 'bg-emerald-500/20 text-emerald-100' : 'bg-white/10 text-white'}`}>
+                  {subscription.status === 'active' ? 'Actif' : subscription.status}
+                </Badge>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-300">Crédits mensuels</p>
+                <p className="mt-2 text-2xl font-semibold text-white">{subscription.credits_limit}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-300">Dernière mise à jour</p>
+                <p className="mt-2 text-sm text-slate-200">
+                  {subscription.updated_at ? new Date(subscription.updated_at).toLocaleDateString('fr-FR') : '—'}
+                </p>
               </div>
             </CardContent>
           </Card>
         )}
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {plans.map((plan) => {
+        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 justify-items-center">
+          {plans
+            .filter((plan) => plan.id !== 'enterprise')
+            .map((plan) => {
             const Icon = plan.icon;
             const isCurrentPlan = subscription?.plan_type === plan.id;
+            const isEnterprise = plan.id === 'enterprise';
 
             return (
               <Card
                 key={plan.id}
-                className={`relative ${plan.popular ? 'border-blue-600 shadow-lg' : ''} ${
+                className={`relative w-full max-w-sm transition-all duration-200 ${
+                  plan.popular ? 'border-blue-600 shadow-xl' : 'border-slate-200 shadow-sm'
+                } ${
                   isCurrentPlan ? 'ring-2 ring-blue-600' : ''
-                }`}
+                } hover:-translate-y-1`}
               >
                 {plan.popular && (
-                  <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-blue-600">
+                  <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 transform bg-blue-600 px-6 py-1 text-xs uppercase tracking-wide">
                     Populaire
                   </Badge>
                 )}
                 {isCurrentPlan && (
-                  <Badge className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-green-600">
+                  <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 transform bg-green-600 px-6 py-1 text-xs uppercase tracking-wide">
                     Actuel
                   </Badge>
                 )}
@@ -223,8 +440,8 @@ export default function SubscriptionPage() {
                       <Icon className="w-6 h-6 text-blue-600" />
                     </div>
                   </div>
-                  <CardTitle className="text-center">{plan.name}</CardTitle>
-                  <CardDescription className="text-center min-h-[40px]">
+                  <CardTitle className="text-center text-xl">{plan.name}</CardTitle>
+                  <CardDescription className="text-center min-h-[48px]">
                     {plan.description}
                   </CardDescription>
                 </CardHeader>
@@ -234,13 +451,13 @@ export default function SubscriptionPage() {
                       <span className="text-4xl font-bold text-slate-900">{plan.price}</span>
                       {plan.period && <span className="text-slate-600 ml-1">{plan.period}</span>}
                     </div>
-                    <p className="text-sm text-slate-600 mt-1">{plan.credits} crédits/mois</p>
+                    <p className="text-sm text-slate-600 mt-1">{plan.creditsLabel} crédits/mois</p>
                   </div>
 
                   <ul className="space-y-3">
                     {plan.features.map((feature, index) => (
                       <li key={index} className="flex items-start">
-                        <Check className="w-5 h-5 text-green-600 mr-2 flex-shrink-0 mt-0.5" />
+                        <Check className="mr-3 mt-0.5 h-5 w-5 flex-shrink-0 text-green-600" />
                         <span className="text-sm text-slate-700">{feature}</span>
                       </li>
                     ))}
@@ -249,10 +466,32 @@ export default function SubscriptionPage() {
                   <Button
                     className="w-full"
                     variant={plan.popular ? 'default' : 'outline'}
-                    onClick={() => handleSubscribe(plan.id, plan.credits)}
-                    disabled={isCurrentPlan}
+                    onClick={() => {
+                      if (isEnterprise) {
+                        return handleSubscribe(plan.id, plan.creditsLimit, {
+                          successMessage: 'Plan Enterprise activé. Notre équipe vous contactera pour la configuration avancée.',
+                        });
+                      }
+                      return plan.id === 'free'
+                        ? handleSubscribe(plan.id, plan.creditsLimit, { successMessage: 'Abonnement activé.' })
+                        : handleStripeCheckout(plan);
+                    }}
+                    disabled={isCurrentPlan || actionLoadingPlan === plan.id}
                   >
-                    {isCurrentPlan ? 'Plan actuel' : 'Choisir ce plan'}
+                    {isCurrentPlan ? (
+                      'Plan actuel'
+                    ) : actionLoadingPlan === plan.id ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Traitement...
+                      </>
+                    ) : plan.id === 'free' ? (
+                      'Choisir ce plan'
+                    ) : isEnterprise ? (
+                      'Souscrire'
+                    ) : (
+                      'Souscrire'
+                    )}
                   </Button>
                 </CardContent>
               </Card>
@@ -260,7 +499,7 @@ export default function SubscriptionPage() {
           })}
         </div>
 
-        <Card className="max-w-4xl mx-auto">
+        <Card className="mx-auto max-w-4xl">
           <CardHeader>
             <CardTitle>Questions fréquentes</CardTitle>
           </CardHeader>

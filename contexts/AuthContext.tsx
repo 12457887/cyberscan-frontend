@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
-import { User } from '@supabase/supabase-js';
+import { Session, User } from '@supabase/supabase-js';
 import { supabase, Profile } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
@@ -10,7 +10,9 @@ type AuthContextType = {
   profile: Profile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
+  signInWithGoogle: () => Promise<{ error: any }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>;
+  sendPasswordReset: (email: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
 };
 
@@ -23,7 +25,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
+    const syncSession = async (event: string, session: Session | null) => {
+      try {
+        await fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event, session }),
+        });
+      } catch (error) {
+        console.error('Failed to sync auth session cookie:', error);
+      }
+    };
+
     supabase.auth.getSession().then(({ data: { session } }) => {
+      syncSession('INITIAL_SESSION', session);
       setUser(session?.user ?? null);
       if (session?.user) {
         loadProfile(session.user.id);
@@ -33,6 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      syncSession(event, session);
       (() => {
         setUser(session?.user ?? null);
         if (session?.user) {
@@ -93,6 +109,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error };
   };
 
+  const signInWithGoogle = async () => {
+    const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo,
+      },
+    });
+    return { error };
+  };
+
   const signUp = async (email: string, password: string, fullName: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -105,6 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (!error && data.user) {
+      const now = new Date().toISOString();
       const { error: profileError } = await supabase
         .from('profiles')
         .insert({
@@ -119,7 +147,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           user_id: data.user.id,
           total_credits: 10,
           used_credits: 0,
-          remaining_credits: 10
+          last_reset_at: now,
+          updated_at: now,
         });
 
         await supabase.from('subscriptions').insert({
@@ -134,13 +163,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error };
   };
 
+  const sendPasswordReset = async (email: string) => {
+    const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/reset-password` : undefined;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo,
+    });
+    return { error };
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     router.push('/login');
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider
+      value={{ user, profile, loading, signIn, signInWithGoogle, signUp, sendPasswordReset, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -9,8 +9,16 @@ export async function GET(
     const { id } = params;
 
     // 🔹 Appelle ton backend (FastAPI)
-    const res = await fetch(`${backendUrl}/generate-report/${id}`, {
+    const headers: Record<string, string> = {};
+    const backendKey = process.env.BACKEND_API_KEY;
+    if (backendKey) headers['x-backend-api-key'] = backendKey;
+
+    const { searchParams } = new URL(req.url);
+    const format = searchParams.get("report_format") || searchParams.get("format") || "pdf";
+
+    const res = await fetch(`${backendUrl}/generate-report/${id}?report_format=${format}`, {
       method: "GET",
+      headers,
     });
 
     if (!res.ok) {
@@ -18,13 +26,18 @@ export async function GET(
       return new Response(errText, { status: res.status });
     }
 
-    // 🔹 Transfère le PDF sans erreur CORS
+    let contentType = res.headers.get("content-type") || "application/octet-stream";
+    const suggestedFilename =
+      res.headers.get("content-disposition")?.split("filename=")[1]?.replace(/"/g, "") ||
+      `rapport-${id}.${format === "xlsx" ? "xlsx" : format === "json" ? "json" : "pdf"}`;
+
+    // 🔹 Transfère le fichier sans erreur CORS
     const blob = await res.blob();
     return new Response(blob, {
       status: 200,
       headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="rapport-${id}.pdf"`,
+        "Content-Type": contentType,
+        "Content-Disposition": `attachment; filename="${suggestedFilename}"`,
       },
     });
   } catch (err) {
