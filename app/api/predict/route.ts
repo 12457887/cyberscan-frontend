@@ -1,33 +1,34 @@
 export async function POST(req: Request) {
   try {
+    // URL du backend (peut être configurée dans les variables d'environnement)
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
     console.log("backendUrl:", backendUrl);
     
-    // Préserver le corps brut et les en-têtes pertinents
+    // Récupérer le corps brut de la requête
     const body = await req.text();
     const headers: Record<string, string> = {};
-    
+
     // Préserver l'en-tête Content-Type
     const contentType = req.headers.get('content-type');
     if (contentType) headers['content-type'] = contentType;
     
-    // Préserver l'en-tête Authorization (s'il est présent)
+    // Préserver l'en-tête Authorization (si présent)
     const auth = req.headers.get('authorization');
     if (auth) headers['authorization'] = auth;
 
-    // Clé API du backend, à inclure dans les en-têtes
+    // Clé API à inclure dans les en-têtes (elle peut être définie dans un fichier d'environnement)
     const backendKey = "3f1c8f4a6f9b51b44d1d7a36de9b32d8a2c1e4ffdcbd84a1";
     
-    // Ajouter l'en-tête X-Backend-Api-Key et l'en-tête Authorization avec Bearer
+    // Ajouter les en-têtes nécessaires pour le backend
     if (backendKey) {
       headers['x-backend-api-key'] = backendKey;
-      // Si Authorization est déjà présent, il faut soit le conserver, soit le remplacer.
+      // Ajouter Authorization avec Bearer si nécessaire
       if (!auth) {
-        headers['authorization'] = `Bearer ${backendKey}`;  // Si pas de token existant
+        headers['authorization'] = `Bearer ${backendKey}`;  // Si pas de token Authorization existant
       }
     }
 
-    // Effectuer la requête fetch vers le backend FastAPI
+    // Effectuer la requête vers le backend FastAPI avec la méthode POST
     const res = await fetch(`${backendUrl}/predict`, {
       method: 'POST',
       headers,
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
 
     return new Response(text, { status: res.status, headers: responseHeaders });
   } catch (err) {
-    // Gérer les erreurs et retourner une réponse JSON avec le message d'erreur
+    // Gérer les erreurs
     console.error('Erreur:', err);
     return new Response(JSON.stringify({ error: String(err) }), {
       status: 500,
