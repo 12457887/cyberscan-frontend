@@ -57,7 +57,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Nouveau Scan', href: '/dashboard/scan', icon: Scan },
     { name: 'Mes scans', href: '/dashboard/reports', icon: FileText },
     { name: 'Détection', href: '/dashboard/detection', icon: Shield },
-    { name: 'Analyseur', href: '/dashboard/analyzer', icon: Search },
+  //  { name: 'Analyseur', href: '/dashboard/analyzer', icon: Search },
     { name: 'Abonnement', href: '/dashboard/subscription', icon: CreditCard },
     { name: 'Profil', href: '/dashboard/profile', icon: User },
     { name: 'Support Technique', href: '/dashboard?section=support', icon: User },

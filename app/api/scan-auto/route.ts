@@ -4,7 +4,7 @@
 export async function POST(req: Request) {
   try {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
-
+    console.log("backendUrl:", backendUrl);
     // Read the incoming body and propagate useful headers
     const body = await req.text();
     const headers: Record<string, string> = {};
@@ -17,6 +17,7 @@ export async function POST(req: Request) {
 
     // Add backend API key header (server-side env) so backend can verify requests
     const backendKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
+    console.log("backendKey:", backendKey);
     if (backendKey) {
       headers['x-backend-api-key'] = backendKey;
     }
