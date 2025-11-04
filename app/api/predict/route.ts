@@ -4,7 +4,7 @@
 export async function POST(req: Request) {
   try {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
-
+    console.log("backendUrl:", backendUrl);
     // Preserve raw body and relevant headers
     const body = await req.text();
     const headers: Record<string, string> = {};

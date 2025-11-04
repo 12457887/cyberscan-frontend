@@ -18,6 +18,7 @@ export async function POST(request: Request) {
 
   try {
     payload = await request.json();
+    console.log("Payload reçu:", process.env.NEXT_PUBLIC_BACKEND_API_KEY);
   } catch (error) {
     return NextResponse.json({ error: 'Payload JSON invalide.' }, { status: 400 });
   }
