@@ -24,7 +24,7 @@ export async function POST(req: Request) {
       headers['x-backend-api-key'] = backendKey;
       // Ajouter Authorization avec Bearer si nécessaire
       if (!auth) {
-        headers['authorization'] = `Bearer ${backendKey}`;  // Si pas de token Authorization existant
+        headers['Authorization'] = `Bearer ${backendKey}`;  // Si pas de token Authorization existant
       }
     }
 
