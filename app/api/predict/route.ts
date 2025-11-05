@@ -28,6 +28,33 @@ export async function POST(req: Request) {
       }
     }
 
+    // Optionnel: log des headers de la requête entrante (contrôlé par LOG_HEADERS)
+    const logHeaders = (process.env.LOG_HEADERS || 'false').toLowerCase();
+    const shouldLog = ['1', 'true', 'yes'].includes(logHeaders);
+    const showSensitive = (process.env.SHOW_SENSITIVE_HEADERS || 'false').toLowerCase();
+    const showSensitiveEnabled = ['1', 'true', 'yes'].includes(showSensitive);
+
+    if (shouldLog) {
+      try {
+        const incoming = Object.fromEntries((req as any).headers?.entries?.() ?? []);
+        const sensitive = ['authorization', 'cookie', 'set-cookie', 'x-backend-api-key'];
+        const masked: Record<string,string|null> = {};
+        for (const k of Object.keys(incoming)) {
+          const v = incoming[k];
+          if (!v) {
+            masked[k] = v;
+          } else if (sensitive.includes(k.toLowerCase()) && !showSensitiveEnabled) {
+            masked[k] = v.length > 20 ? v.slice(0, 20) + '... (masked)' : '***masked***';
+          } else {
+            masked[k] = v;
+          }
+        }
+        console.log('Predict API incoming headers:', masked);
+      } catch (e) {
+        console.warn('Could not log incoming headers:', e);
+      }
+    }
+
     // Effectuer la requête vers le backend FastAPI avec la méthode POST
     const res = await fetch(`${backendUrl}/predict`, {
       method: 'POST',
@@ -40,6 +67,24 @@ export async function POST(req: Request) {
     const responseHeaders: Record<string, string> = {};
     const resContentType = res.headers.get('content-type');
     if (resContentType) responseHeaders['content-type'] = resContentType;
+
+    if (shouldLog) {
+      try {
+        const rh: Record<string,string> = {};
+        res.headers.forEach((v, k) => { rh[k] = v; });
+        const sensitive = ['authorization', 'cookie', 'set-cookie', 'x-backend-api-key'];
+        const maskedResp: Record<string,string|null> = {};
+        for (const k of Object.keys(rh)) {
+          const v = rh[k];
+          if (!v) maskedResp[k] = v;
+          else if (sensitive.includes(k.toLowerCase()) && !showSensitiveEnabled) maskedResp[k] = v.length > 20 ? v.slice(0,20) + '... (masked)' : '***masked***';
+          else maskedResp[k] = v;
+        }
+        console.log('Predict API backend response headers:', maskedResp);
+      } catch (e) {
+        console.warn('Could not log response headers:', e);
+      }
+    }
 
     return new Response(text, { status: res.status, headers: responseHeaders });
   } catch (err) {
