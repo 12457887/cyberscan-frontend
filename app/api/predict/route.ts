@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     if (auth) headers['authorization'] = auth;
 
     // Clé API à inclure dans les en-têtes (elle peut être définie dans un fichier d'environnement)
-    const backendKey = "3f1c8f4a6f9b51b44d1d7a36de9b32d8a2c1e4ffdcbd84a1";
+    const backendKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
     
     // Ajouter les en-têtes nécessaires pour le backend
     if (backendKey) {
