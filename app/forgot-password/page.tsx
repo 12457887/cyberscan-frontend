@@ -14,17 +14,20 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [status, setStatus] = useState<'success' | 'error' | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
+    setStatus(null);
     setLoading(true);
 
-    const { error } = await sendPasswordReset(email);
+    const { error, message: responseMessage } = await sendPasswordReset(email);
+    setStatus(error ? 'error' : 'success');
     if (error) {
-      setMessage("Impossible d'envoyer le lien de réinitialisation.");
+      setMessage(responseMessage || "Impossible d'envoyer le lien de réinitialisation.");
     } else {
-      setMessage("Un email de réinitialisation vient d'être envoyé. Consultez votre boîte de réception.");
+      setMessage(responseMessage || "Un email de réinitialisation vient d'être envoyé. Consultez votre boîte de réception.");
     }
     setLoading(false);
   };
@@ -58,7 +61,7 @@ export default function ForgotPasswordPage() {
             {message && (
               <div
                 className={`text-sm p-3 rounded-md ${
-                  message.includes('envoyé')
+                  status === 'success'
                     ? 'text-green-700 bg-green-50'
                     : 'text-red-700 bg-red-50'
                 }`}

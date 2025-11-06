@@ -5,15 +5,40 @@ import { Session, User } from '@supabase/supabase-js';
 import { supabase, Profile } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
+type AuthResponse = {
+  error: any;
+  message?: string;
+};
+
 type AuthContextType = {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signInWithGoogle: () => Promise<{ error: any }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>;
-  sendPasswordReset: (email: string) => Promise<{ error: any }>;
+  signIn: (email: string, password: string) => Promise<AuthResponse>;
+  signInWithGoogle: () => Promise<AuthResponse>;
+  signUp: (email: string, password: string, fullName: string) => Promise<AuthResponse>;
+  sendPasswordReset: (email: string) => Promise<AuthResponse>;
   signOut: () => Promise<void>;
+};
+
+const appUrlFromEnv =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  undefined;
+
+const resolveAppUrl = () => {
+  if (appUrlFromEnv) {
+    return appUrlFromEnv.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  return undefined;
+};
+
+const buildRedirectUrl = (path: string) => {
+  const base = resolveAppUrl();
+  return base ? `${base}${path}` : undefined;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -104,12 +129,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string): Promise<AuthResponse> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error };
+    return { error, message: error?.message };
   };
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (): Promise<AuthResponse> => {
     const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -117,17 +142,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         redirectTo,
       },
     });
-    return { error };
+    return { error, message: error?.message };
   };
 
-  const signUp = async (email: string, password: string, fullName: string) => {
+  const signUp = async (email: string, password: string, fullName: string): Promise<AuthResponse> => {
+    const emailRedirectTo = buildRedirectUrl('/login');
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
           name: fullName
-        }
+        },
+        emailRedirectTo,
       }
     });
 
@@ -160,15 +187,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    return { error };
+    return { error, message: error?.message };
   };
 
-  const sendPasswordReset = async (email: string) => {
-    const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/reset-password` : undefined;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo,
-    });
-    return { error };
+  const sendPasswordReset = async (email: string): Promise<AuthResponse> => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+    if (!backendUrl) {
+      return { error: true, message: "Backend non configuré pour l'envoi d'emails." };
+    }
+
+    const endpoint = `${backendUrl.replace(/\/$/, '')}/auth/send-password-reset`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const backendKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
+    if (backendKey) {
+      headers['x-backend-api-key'] = backendKey;
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        return {
+          error: data || true,
+          message:
+            data?.detail ||
+            data?.message ||
+            "Impossible d'envoyer le lien de réinitialisation.",
+        };
+      }
+
+      return {
+        error: null,
+        message: data?.message || 'Un email de réinitialisation a été envoyé.',
+      };
+    } catch (error) {
+      console.error('sendPasswordReset error:', error);
+      return {
+        error,
+        message: "Service de réinitialisation indisponible. Réessayez plus tard.",
+      };
+    }
   };
 
   const signOut = async () => {
