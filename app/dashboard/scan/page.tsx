@@ -24,23 +24,12 @@ const PLAN_CONCURRENCY: Record<string, number> = {
   enterprise: 10,
 };
 
-// --- Types for scan payload ---
-type SiteWithCMS = {
-  url: string;
-  mode: 'light' | 'complete';
-  scan_id: string | null;
-  frontend_scan_id: string | null;
-  user_id: string;
-  cms?: 'wordpress' | 'drupal' | 'prestashop' | 'inconnu';
-};
-
 export default function ScanPage() {
   const { user, profile } = useAuth();
   const router = useRouter();
   const [siteName, setSiteName] = useState('');
   const [siteUrl, setSiteUrl] = useState('');
   const [scanType, setScanType] = useState<'light' | 'complete'>('light');
-  const [cmsType, setCmsType] = useState<'wordpress' | 'drupal' | 'prestashop' | 'inconnu'>('inconnu');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [scanProgress, setScanProgress] = useState(0);
@@ -317,21 +306,13 @@ export default function ScanPage() {
         user_id: user.id,
       }));
 
-      let endpoint = `${API_BASE}/scan-auto-detect`;
-      let bodyPayload = basePayload;
-
-      if (cmsType && cmsType !== 'inconnu') {
-        endpoint = `${API_BASE}/scan-auto`;
-        bodyPayload = basePayload.map((item) => ({ ...item, cms: cmsType }));
-      }
-
-      const response = await fetch(endpoint, {
+      const response = await fetch(`${API_BASE}/scan-auto-detect`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Max-Concurrent-Scans': concurrencyLimit.toString(),
         },
-        body: JSON.stringify(bodyPayload),
+        body: JSON.stringify(basePayload),
       });
 
       if (!response.ok) {
@@ -434,58 +415,10 @@ export default function ScanPage() {
                     required
                   />
                 )}
-                {PLAN_CONCURRENCY[planType] > 1 && (
-                  <p className="text-sm text-slate-500">
-                    Plan {planType}: entrez un domaine par ligne (jusqu'à {PLAN_CONCURRENCY[planType]} scans simultanés).
-                  </p>
-                )}
+               
               </div>
 
-              {/* === Choix du CMS spécifique (facultatif) === */}
-              <div className="space-y-2">
-                <Label>CMS (optionnel)</Label>
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setCmsType('wordpress')}
-                    className={`flex-1 p-3 border rounded-lg text-center ${cmsType === 'wordpress' ? 'bg-blue-50 border-blue-300' : 'hover:bg-slate-50'}`}
-                    aria-pressed={cmsType === 'wordpress'}
-                  >
-                    <div className="font-medium">WordPress</div>
-                    <div className="text-xs text-slate-500">CMS spécifique</div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setCmsType('drupal')}
-                    className={`flex-1 p-3 border rounded-lg text-center ${cmsType === 'drupal' ? 'bg-blue-50 border-blue-300' : 'hover:bg-slate-50'}`}
-                    aria-pressed={cmsType === 'drupal'}
-                  >
-                    <div className="font-medium">Drupal</div>
-                    <div className="text-xs text-slate-500">CMS spécifique</div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setCmsType('prestashop')}
-                    className={`flex-1 p-3 border rounded-lg text-center ${cmsType === 'prestashop' ? 'bg-blue-50 border-blue-300' : 'hover:bg-slate-50'}`}
-                    aria-pressed={cmsType === 'prestashop'}
-                  >
-                    <div className="font-medium">PrestaShop</div>
-                    <div className="text-xs text-slate-500">CMS spécifique</div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setCmsType('inconnu')}
-                    className={`flex-1 p-3 border rounded-lg text-center ${cmsType === 'inconnu' ? 'bg-blue-50 border-blue-300' : 'hover:bg-slate-50'}`}
-                    aria-pressed={cmsType === 'inconnu'}
-                  >
-                    <div className="font-medium">Inconnu</div>
-                    <div className="text-xs text-slate-500">Détection automatique</div>
-                  </button>
-                </div>
-              </div>
+            
 
               {/* === Type de scan === */}
               <div className="space-y-3">
@@ -510,9 +443,6 @@ export default function ScanPage() {
                     </div>
                   </div>
                 </RadioGroup>
-                <p className="text-sm text-slate-500">
-                  Le scan complet sera bientôt disponible.
-                </p>
               </div>
 
               {canSchedule && (

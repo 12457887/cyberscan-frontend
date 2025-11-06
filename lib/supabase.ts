@@ -77,6 +77,8 @@ export type Ticket = {
   user_id: string;
   title: string;
   description: string;
+  phone_number?: string | null;
+  contact_email?: string | null;
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
   priority: 'low' | 'medium' | 'high';
   created_at: string;

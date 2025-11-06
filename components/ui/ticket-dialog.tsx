@@ -1,3 +1,5 @@
+'use client';
+
 import { useState } from 'react';
 import { Button } from './button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './dialog';
@@ -15,7 +17,9 @@ export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void 
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    priority: 'medium'
+    priority: 'medium',
+    email: '',
+    phone: '',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,17 +28,22 @@ export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void 
 
     setIsLoading(true);
     try {
+      const phoneValue = formData.phone.trim();
+      const emailValue = formData.email.trim();
+
       const { error } = await supabase.from('tickets').insert({
         user_id: user.id,
         title: formData.title,
         description: formData.description,
         priority: formData.priority,
+        contact_email: emailValue || null,
+        phone_number: phoneValue || null,
         status: 'open'
       });
 
       if (error) throw error;
 
-      setFormData({ title: '', description: '', priority: 'medium' });
+      setFormData({ title: '', description: '', priority: 'medium', email: '', phone: '' });
       setIsOpen(false);
       onTicketCreated();
     } catch (error) {
@@ -77,6 +86,28 @@ export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void 
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               placeholder="Décrivez votre problème en détail"
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="email" className="text-sm font-medium">Email de contact</label>
+            <Input
+              id="email"
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+              placeholder="contact@exemple.com"
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="phone" className="text-sm font-medium">Numéro de téléphone</label>
+            <Input
+              id="phone"
+              type="tel"
+              value={formData.phone}
+              onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+              placeholder="+33 6 12 34 56 78"
               required
             />
           </div>

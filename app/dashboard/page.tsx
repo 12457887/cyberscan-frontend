@@ -3,12 +3,8 @@
 import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase, Credits, Scan, Alert, Ticket, ScheduledScan } from '@/lib/supabase';
+import { supabase, Credits, Scan, Alert, Ticket } from '@/lib/supabase';
 import { TicketsPanel } from '@/components/ui/tickets-panel';
-import { ScanCalendarPanel } from '@/components/ui/scan-calendar-panel';
-import { TicketDialog } from '@/components/ui/ticket-dialog';
-import { ScheduleScanDialog } from '@/components/ui/schedule-scan-dialog';
-import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CreditCard, Activity, AlertTriangle, TrendingUp, BarChart3, AlertCircle } from 'lucide-react';
@@ -116,7 +112,6 @@ export default function DashboardPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [vulnerabilityTrend, setVulnerabilityTrend] = useState<VulnerabilityTrendPoint[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [scheduledScans, setScheduledScans] = useState<ScheduledScan[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -139,7 +134,7 @@ export default function DashboardPage() {
       rangeStart.setDate(today.getDate() - (DAYS_RANGE - 1));
       const rangeStartIso = rangeStart.toISOString();
 
-      const [creditsRes, scansRes, alertsRes, scheduledScansRes] = await Promise.all([
+      const [creditsRes, scansRes, alertsRes] = await Promise.all([
         supabase.from('credits').select('*').eq('user_id', user.id).maybeSingle(),
         supabase
           .from('scans')
@@ -148,17 +143,10 @@ export default function DashboardPage() {
           .gte('created_at', rangeStartIso)
           .order('created_at', { ascending: false }),
         supabase.from('alerts').select('*').eq('user_id', user.id).eq('is_read', false).limit(5),
-        supabase
-          .from('scheduled_scans')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('is_active', true)
-          .order('next_scan_date', { ascending: true }),
       ]);
 
       if (creditsRes.data) setCredits(creditsRes.data);
       let scansData = scansRes.data || [];
-      if (scheduledScansRes.data) setScheduledScans(scheduledScansRes.data);
 
       let ticketsData: Ticket[] = [];
       if (isAdminUser) {
@@ -334,9 +322,9 @@ export default function DashboardPage() {
         <div className="space-y-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-slate-900">Support & Automatisation</h1>
+              <h1 className="text-3xl font-bold text-slate-900">Support technique</h1>
               <p className="text-slate-600 mt-1">
-                Gérez vos tickets d'assistance et configurez vos scans planifiés.
+                Créez et suivez vos demandes d'assistance auprès de l'équipe Cyber Scan.
               </p>
             </div>
             <button
@@ -357,16 +345,13 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <TicketsPanel tickets={tickets} onTicketCreated={loadDashboardData} isAdmin={isAdminUser} />
-            <ScanCalendarPanel scheduledScans={scheduledScans} onScanScheduled={loadDashboardData} />
-          </div>
+          <TicketsPanel tickets={tickets} onTicketCreated={loadDashboardData} isAdmin={isAdminUser} />
 
           {loading && (
             <Card>
               <CardHeader>
                 <CardTitle>Chargement…</CardTitle>
-                <CardDescription>Récupération de vos tickets et scans programmés.</CardDescription>
+                <CardDescription>Récupération de vos tickets.</CardDescription>
               </CardHeader>
               <CardContent className="text-sm text-slate-500">Merci de patienter…</CardContent>
             </Card>
@@ -630,75 +615,11 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Tickets de support</CardTitle>
-              <CardDescription>Les 5 derniers tickets ouverts</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <TicketDialog onTicketCreated={() => loadDashboardData()} />
-              {tickets.length === 0 ? (
-                <p className="text-sm text-slate-600 text-center mt-4">Aucun ticket en cours</p>
-              ) : (
-                tickets.map((ticket) => (
-                  <div key={ticket.id} className="rounded-lg border border-slate-200 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{ticket.title}</p>
-                        <p className="mt-1 text-xs text-slate-500">{ticket.description}</p>
-                      </div>
-                      <Badge variant="outline" className={
-                        ticket.status === 'open' ? 'bg-blue-100 text-blue-700' :
-                        ticket.status === 'in_progress' ? 'bg-amber-100 text-amber-700' :
-                        ticket.status === 'resolved' ? 'bg-green-100 text-green-700' :
-                        'bg-slate-100 text-slate-700'
-                      }>
-                        {ticket.status === 'open' ? 'Ouvert' :
-                         ticket.status === 'in_progress' ? 'En cours' :
-                         ticket.status === 'resolved' ? 'Résolu' :
-                         'Fermé'}
-                      </Badge>
-                    </div>
-                    <p className="mt-2 text-[11px] text-slate-400">
-                      {new Date(ticket.created_at).toLocaleString('fr-FR')}
-                    </p>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Calendrier des scans programmés</CardTitle>
-              <CardDescription>Vos prochains scans automatiques</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ScheduleScanDialog onScanScheduled={() => loadDashboardData()} />
-              <div className="mt-4">
-                <Calendar
-                  mode="multiple"
-                  selected={scheduledScans.map(scan => new Date(scan.next_scan_date))}
-                  className="rounded-md border"
-                />
-                <div className="mt-4 space-y-2">
-                  {scheduledScans.map((scan) => (
-                    <div key={scan.id} className="flex items-center justify-between text-sm">
-                      <div className="flex items-center">
-                        <div className="w-2 h-2 rounded-full bg-blue-500 mr-2" />
-                        <span className="text-slate-700">{scan.site_url}</span>
-                      </div>
-                      <span className="text-slate-500">
-                        {new Date(scan.next_scan_date).toLocaleDateString('fr-FR')}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <TicketsPanel
+          tickets={tickets}
+          onTicketCreated={loadDashboardData}
+          isAdmin={isAdminUser}
+        />
       </div>
     </DashboardLayout>
   );
