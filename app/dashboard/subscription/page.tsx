@@ -29,7 +29,12 @@ type PlanDefinition = {
   popular?: boolean;
 };
 
-type LocalizedPlan = PlanDefinition & {
+type LocalizedPlan = {
+  id: PlanDefinition['id'];
+  icon: PlanDefinition['icon'];
+  price: string;
+  creditsLimit: number;
+  popular?: boolean;
   name: string;
   description: string;
   creditsLabel: string;
@@ -132,7 +137,11 @@ export default function SubscriptionPage() {
   const searchParams = useSearchParams();
   const handledCheckoutRef = useRef(false);
   const planConfigs: LocalizedPlan[] = PLAN_DEFINITIONS.map((plan) => ({
-    ...plan,
+    id: plan.id,
+    icon: plan.icon,
+    price: plan.price,
+    creditsLimit: plan.creditsLimit,
+    popular: plan.popular,
     name: localize(plan.name.fr, plan.name.en),
     description: localize(plan.description.fr, plan.description.en),
     creditsLabel: localize(plan.creditsLabel.fr, plan.creditsLabel.en),
