@@ -1,0 +1,96 @@
+{
+  "language": {
+    "label": "Langue",
+    "english": "Anglais",
+    "french": "Français",
+    "short": {
+      "fr": "FR",
+      "en": "EN"
+    }
+  },
+  "common": {
+    "appName": "CyberScan",
+    "loading": "Chargement...",
+    "logout": "Se déconnecter",
+    "notifications": "Notifications",
+    "adminBadge": "Admin",
+    "historyEmpty": "Aucune analyse enregistrée.",
+    "historySoon": "L'historique se remplira après vos analyses.",
+    "historyAuto": "L'historique se remplira automatiquement après vos analyses.",
+    "errorPrefix": "Erreur",
+    "resultsPlaceholder": "Lancez une détection pour visualiser les résultats."
+  },
+  "plans": {
+    "free": "Abonnement Gratuit",
+    "basic": "Abonnement Basic",
+    "pro": "Abonnement Pro",
+    "enterprise": "Abonnement Enterprise",
+    "admin": "Abonnement Admin",
+    "unknown": "Plan inconnu"
+  },
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "newScan": "Nouveau Scan",
+    "reports": "Mes scans",
+    "detection": "Détection",
+    "subscription": "Abonnement",
+    "profile": "Profil",
+    "support": "Support Technique",
+    "admin": "Administration",
+    "logout": "Se déconnecter"
+  },
+  "detection": {
+    "title": "Détection de CMS",
+    "description": "Identifiez rapidement les technologies utilisées par vos cibles. Analysez jusqu'à 10 URLs à la fois ou importez un fichier pour accélérer vos investigations.",
+    "formTitle": "Nouvelle détection",
+    "formDescription": "Collez vos URLs (une par ligne) ou importez un fichier pour lancer l'analyse. Nous normalisons automatiquement les liens.",
+    "placeholder": "https://example.com\nhttps://exemple.fr",
+    "importLabel": "Importer une liste (.txt, .csv)",
+    "limitLabel": "Limite : {{count}} URLs",
+    "protocolHint": "Les URLs sans protocole seront automatiquement converties en https://",
+    "submit": "Détecter le CMS",
+    "loading": "Analyse en cours...",
+    "reset": "Réinitialiser",
+    "accessDeniedTitle": "Détection indisponible",
+    "accessDeniedDescription": "La détection de CMS est disponible à partir du plan Basic. Passez à un plan supérieur pour profiter de cette fonctionnalité avancée.",
+    "viewPlans": "Voir les abonnements",
+    "overviewTitle": "Vue d'ensemble",
+    "overviewDescription": "Surveillez votre plan et l'activité récente de vos analyses.",
+    "currentPlan": "Plan actuel",
+    "detectionIncluded": "Détection incluse",
+    "successes": "Succès",
+    "failures": "Échecs",
+    "lastAnalyzed": "Dernier site analysé",
+    "savedDetections": "{{count}} détections sauvegardées",
+    "historyEmpty": "L'historique se remplira après vos analyses.",
+    "errorBanner": "Erreur",
+    "resultsTitle": "Résultats de la détection",
+    "resultsDescription": "Analyse des URLs soumises et CMS détectés.",
+    "resultsPlaceholder": "Soumettez une analyse pour afficher les résultats ici.",
+    "historyTitle": "Historique des détections",
+    "historyDescription": "Suivez vos précédentes analyses et retrouvez rapidement les CMS détectés.",
+    "historyTable": {
+      "site": "Site",
+      "date": "Date",
+      "cms": "CMS"
+    },
+    "fileErrors": {
+      "noUrl": "Le fichier ne contient pas d'URL valide.",
+      "tooMany": "Maximum {{count}} URLs autorisées. Les {{count}} premières ont été conservées.",
+      "read": "Impossible de lire le fichier sélectionné."
+    },
+    "manualErrors": {
+      "noUrl": "Veuillez saisir au moins une URL.",
+      "tooMany": "Maximum {{count}} URLs autorisées."
+    },
+    "status": {
+      "success": "Succès",
+      "error": "Échec"
+    },
+    "confidence": "Confiance",
+    "unknownCms": "Inconnu",
+    "errorFallback": "Impossible de détecter le CMS.",
+    "historyNotice": "L'historique se remplira automatiquement après vos analyses.",
+    "subscriptionLoading": "Chargement de vos informations d'abonnement..."
+  }
+}

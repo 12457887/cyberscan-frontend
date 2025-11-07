@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,90 +16,114 @@ const ENTERPRISE_PRICE =
     ? `${process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE}€`
     : '150€';
 
-const plans = [
+type PlanDefinition = {
+  id: 'free' | 'basic' | 'pro' | 'enterprise';
+  icon: typeof Zap;
+  price: string;
+  period?: { fr: string; en: string };
+  name: { fr: string; en: string };
+  description: { fr: string; en: string };
+  creditsLimit: number;
+  creditsLabel: { fr: string; en: string };
+  features: Array<{ fr: string; en: string }>;
+  popular?: boolean;
+};
+
+type LocalizedPlan = PlanDefinition & {
+  name: string;
+  description: string;
+  creditsLabel: string;
+  period?: string;
+  features: string[];
+};
+
+const PLAN_DEFINITIONS: PlanDefinition[] = [
   {
     id: 'free',
-    name: 'Gratuit',
+    name: { fr: 'Gratuit', en: 'Free' },
     price: '0€',
-    period: '/mois',
+    period: { fr: '/mois', en: '/month' },
     icon: Zap,
-    description: 'Parfait pour découvrir CyberScan',
+    description: { fr: 'Parfait pour découvrir CyberScan', en: 'Perfect to discover CyberScan' },
     creditsLimit: 10,
-    creditsLabel: '10',
+    creditsLabel: { fr: '10', en: '10' },
     features: [
-      '10 crédits par mois',
-      'Scans légers',
-      'Rapports basiques',
-      'Support par email',
-      '1 scan simultané',
-      'Support via tickets communautaires',
+      { fr: '10 crédits par mois', en: '10 credits per month' },
+      { fr: 'Scans légers', en: 'Light scans' },
+      { fr: 'Rapports basiques', en: 'Basic reports' },
+      { fr: 'Support par email', en: 'Email support' },
+      { fr: '1 scan simultané', en: '1 concurrent scan' },
+      { fr: 'Support via tickets communautaires', en: 'Community ticket support' },
     ],
   },
   {
     id: 'basic',
-    name: 'Basic',
+    name: { fr: 'Basic', en: 'Basic' },
     price: '29€',
-    period: '/mois',
+    period: { fr: '/mois', en: '/month' },
     icon: Shield,
-    description: 'Pour les petites entreprises',
+    description: { fr: 'Pour les petites entreprises', en: 'For small businesses' },
     creditsLimit: 50,
-    creditsLabel: '50',
+    creditsLabel: { fr: '50', en: '50' },
     features: [
-      '50 crédits par mois',
-      'Scans légers et complets',
-      'Rapports détaillés',
-      'Support prioritaire',
-      'Historique 6 mois',
-      '1 scan simultané',
-      'Support via tickets standard',
+      { fr: '50 crédits par mois', en: '50 credits per month' },
+      { fr: 'Scans légers et complets', en: 'Light and full scans' },
+      { fr: 'Rapports détaillés', en: 'Detailed reports' },
+      { fr: 'Support prioritaire', en: 'Priority support' },
+      { fr: 'Historique 6 mois', en: '6-month history' },
+      { fr: '1 scan simultané', en: '1 concurrent scan' },
+      { fr: 'Support via tickets standard', en: 'Standard ticket support' },
     ],
     popular: true,
   },
   {
     id: 'pro',
-    name: 'Pro',
+    name: { fr: 'Pro', en: 'Pro' },
     price: '99€',
-    period: '/mois',
+    period: { fr: '/mois', en: '/month' },
     icon: Crown,
-    description: 'Pour les professionnels exigeants',
+    description: { fr: 'Pour les professionnels exigeants', en: 'For demanding professionals' },
     creditsLimit: 200,
-    creditsLabel: '200',
+    creditsLabel: { fr: '200', en: '200' },
     features: [
-      '200 crédits par mois',
-      'Tous types de scans',
-      'Rapports avancés',
-      'Support 24/7',
-      'Détection CMS incluse',
-      'Jusqu’à 5 scans simultanés',
-      'Support avancé par tickets',
-      'Planification automatique (hebdo/mensuelle)',
+      { fr: '200 crédits par mois', en: '200 credits per month' },
+      { fr: 'Tous types de scans', en: 'All scan types' },
+      { fr: 'Rapports avancés', en: 'Advanced reports' },
+      { fr: 'Support 24/7', en: '24/7 support' },
+      { fr: 'Détection CMS incluse', en: 'CMS detection included' },
+      { fr: 'Jusqu’à 5 scans simultanés', en: 'Up to 5 concurrent scans' },
+      { fr: 'Support avancé par tickets', en: 'Advanced ticket support' },
+      { fr: 'Planification automatique (hebdo/mensuelle)', en: 'Automatic scheduling (weekly/monthly)' },
     ],
   },
   {
     id: 'enterprise',
-    name: 'Enterprise',
+    name: { fr: 'Enterprise', en: 'Enterprise' },
     price: ENTERPRISE_PRICE,
-    period: '/mois',
+    period: { fr: '/mois', en: '/month' },
     icon: Building2,
-    description: 'Solutions sur mesure',
+    description: { fr: 'Solutions sur mesure', en: 'Tailor-made solutions' },
     creditsLimit: 999999,
-    creditsLabel: 'Illimités',
+    creditsLabel: { fr: 'Illimités', en: 'Unlimited' },
     features: [
-      'Crédits illimités',
-      'Tous types de scans',
-      'Rapports sur mesure',
-      'Support dédié',
-      'Jusqu’à 10 scans simultanés',
-      'Support premium par tickets illimités',
-      'Planification personnalisée des scans',
-      'Détection CMS incluse',
-      'Accès complet à l’analyseur avancé',
+      { fr: 'Crédits illimités', en: 'Unlimited credits' },
+      { fr: 'Tous types de scans', en: 'All scan types' },
+      { fr: 'Rapports sur mesure', en: 'Custom reports' },
+      { fr: 'Support dédié', en: 'Dedicated support' },
+      { fr: 'Jusqu’à 10 scans simultanés', en: 'Up to 10 concurrent scans' },
+      { fr: 'Support premium par tickets illimités', en: 'Premium unlimited ticket support' },
+      { fr: 'Planification personnalisée des scans', en: 'Custom scan scheduling' },
+      { fr: 'Détection CMS incluse', en: 'CMS detection included' },
+      { fr: 'Accès complet à l’analyseur avancé', en: 'Full access to the advanced analyzer' },
     ],
   },
 ];
 
 export default function SubscriptionPage() {
   const { user } = useAuth();
+  const { choose } = useLanguage();
+  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
+  const locale = choose({ fr: 'fr-FR', en: 'en-US' });
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -106,6 +131,15 @@ export default function SubscriptionPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const handledCheckoutRef = useRef(false);
+  const planConfigs: LocalizedPlan[] = PLAN_DEFINITIONS.map((plan) => ({
+    ...plan,
+    name: localize(plan.name.fr, plan.name.en),
+    description: localize(plan.description.fr, plan.description.en),
+    creditsLabel: localize(plan.creditsLabel.fr, plan.creditsLabel.en),
+    period: plan.period ? localize(plan.period.fr, plan.period.en) : undefined,
+    features: plan.features.map((feature) => localize(feature.fr, feature.en)),
+  }));
+  const planNameMap = Object.fromEntries(planConfigs.map((plan) => [plan.id, plan.name]));
 
   useEffect(() => {
     if (user) {
@@ -231,8 +265,11 @@ export default function SubscriptionPage() {
 
       await supabase.from('alerts').insert({
         user_id: user.id,
-        title: 'Abonnement mis à jour',
-        message: `Votre abonnement a été mis à jour vers le plan ${planType}.`,
+        title: localize('Abonnement mis à jour', 'Subscription updated'),
+        message: localize(
+          `Votre abonnement a été mis à jour vers le plan ${planType}.`,
+          `Your subscription has been updated to the ${planType} plan.`
+        ),
         type: 'subscription',
         severity: 'info',
       });
@@ -241,30 +278,33 @@ export default function SubscriptionPage() {
       if (!options?.silent) {
         setStatusMessage({
           type: 'success',
-          text: options?.successMessage || 'Abonnement mis à jour avec succès !',
+          text: options?.successMessage || localize('Abonnement mis à jour avec succès !', 'Subscription updated successfully!'),
         });
       }
     } catch (error) {
       console.error('Error updating subscription:', error);
       setStatusMessage({
         type: 'error',
-        text: 'Erreur lors de la mise à jour de l\'abonnement.',
+        text: localize("Erreur lors de la mise à jour de l'abonnement.", 'Error updating subscription.'),
       });
     }
     setActionLoadingPlan(null);
   };
 
-  const handleStripeCheckout = async (plan: (typeof plans)[number]) => {
+  const handleStripeCheckout = async (plan: LocalizedPlan) => {
     if (!user) return;
 
     if (plan.id === 'free') {
-      handleSubscribe(plan.id, plan.creditsLimit, { successMessage: 'Abonnement activé.' });
+      handleSubscribe(plan.id, plan.creditsLimit, { successMessage: localize('Abonnement activé.', 'Plan activated.') });
       return;
     }
 
     if (plan.id === 'enterprise') {
       handleSubscribe(plan.id, plan.creditsLimit, {
-        successMessage: 'Plan Enterprise activé. Notre équipe vous contactera pour la configuration avancée.',
+        successMessage: localize(
+          'Plan Enterprise activé. Notre équipe vous contactera pour la configuration avancée.',
+          'Enterprise plan activated. Our team will contact you for advanced setup.'
+        ),
       });
       return;
     }
@@ -281,7 +321,7 @@ export default function SubscriptionPage() {
 
       if (!response.ok) {
         const body = await response.json().catch(() => null);
-        throw new Error(body?.error || 'Erreur lors de la création de la session Stripe.');
+        throw new Error(body?.error || localize('Erreur lors de la création de la session Stripe.', 'Error creating the Stripe session.'));
       }
 
       const data = await response.json();
@@ -290,12 +330,12 @@ export default function SubscriptionPage() {
         return;
       }
 
-      throw new Error('URL de redirection Stripe manquante.');
+      throw new Error(localize('URL de redirection Stripe manquante.', 'Missing Stripe redirect URL.'));
     } catch (error: any) {
       console.error('Stripe checkout error:', error);
       setStatusMessage({
         type: 'error',
-        text: error?.message || 'Impossible de démarrer le paiement Stripe.',
+        text: error?.message || localize('Impossible de démarrer le paiement Stripe.', 'Unable to start Stripe checkout.'),
       });
       setActionLoadingPlan(null);
     }
@@ -313,18 +353,18 @@ export default function SubscriptionPage() {
     }
 
     if (success === 'true' && planParam && !handledCheckoutRef.current) {
-      const planConfig = plans.find((p) => p.id === planParam);
+      const planConfig = planConfigs.find((p) => p.id === planParam);
       if (planConfig) {
         handledCheckoutRef.current = true;
         handleSubscribe(planConfig.id, planConfig.creditsLimit, {
-          successMessage: 'Paiement confirmé, votre abonnement est actif.',
+          successMessage: localize('Paiement confirmé, votre abonnement est actif.', 'Payment confirmed, your subscription is active.'),
         });
       }
     }
 
     if (canceled === 'true' && !handledCheckoutRef.current) {
       handledCheckoutRef.current = true;
-      setStatusMessage({ type: 'error', text: 'Paiement annulé.' });
+      setStatusMessage({ type: 'error', text: localize('Paiement annulé.', 'Payment canceled.') });
     }
 
     if ((success || canceled) && typeof window !== 'undefined') {
@@ -342,7 +382,7 @@ export default function SubscriptionPage() {
     return (
       <DashboardLayout>
         <div className="text-center py-12">
-          <p className="text-slate-600">Chargement...</p>
+          <p className="text-slate-600">{localize('Chargement...', 'Loading...')}</p>
         </div>
       </DashboardLayout>
     );
@@ -355,9 +395,14 @@ export default function SubscriptionPage() {
           <Badge variant="outline" className="mx-auto border-blue-200 bg-blue-50 text-blue-700">
             CyberScan Premium
           </Badge>
-          <h1 className="text-4xl font-bold text-slate-900">Choisissez votre abonnement</h1>
+          <h1 className="text-4xl font-bold text-slate-900">
+            {localize('Choisissez votre abonnement', 'Choose your subscription')}
+          </h1>
           <p className="max-w-2xl mx-auto text-slate-600">
-            Passez au plan qui correspond à vos besoins en sécurité. Crédit mensuel, support prioritaire et fonctionnalités avancées selon votre choix.
+            {localize(
+              'Passez au plan qui correspond à vos besoins en sécurité. Crédit mensuel, support prioritaire et fonctionnalités avancées selon votre choix.',
+              'Pick the plan that matches your security needs. Monthly credits, priority support, and advanced features as you grow.'
+            )}
           </p>
         </div>
 
@@ -376,31 +421,40 @@ export default function SubscriptionPage() {
         {subscription && (
           <Card className="relative mx-auto max-w-3xl overflow-hidden border-none bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-xl">
             <span className="absolute top-0 right-0 rounded-bl-md bg-blue-600 px-3 py-1 text-xs font-semibold uppercase">
-              Plan actuel
+              {localize('Plan actuel', 'Current plan')}
             </span>
             <CardHeader className="space-y-2">
               <CardTitle className="text-2xl font-semibold">
-                Abonnement {subscription.plan_type.charAt(0).toUpperCase() + subscription.plan_type.slice(1)}
+                {localize('Abonnement', 'Plan')}{' '}
+                {planNameMap[subscription.plan_type as keyof typeof planNameMap] ??
+                  subscription.plan_type.charAt(0).toUpperCase() + subscription.plan_type.slice(1)}
               </CardTitle>
               <CardDescription className="text-slate-200/80">
-                Gérez votre plan directement depuis cette page. Vous pouvez évoluer vers un plan supérieur à tout moment.
+                {localize(
+                  'Gérez votre plan directement depuis cette page. Vous pouvez évoluer vers un plan supérieur à tout moment.',
+                  'Manage your plan directly from this page. You can upgrade at any time.'
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-6 md:grid-cols-3">
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-300">Statut</p>
+                <p className="text-xs uppercase tracking-wide text-slate-300">{localize('Statut', 'Status')}</p>
                 <Badge className={`mt-2 border border-white/20 ${subscription.status === 'active' ? 'bg-emerald-500/20 text-emerald-100' : 'bg-white/10 text-white'}`}>
-                  {subscription.status === 'active' ? 'Actif' : subscription.status}
+                  {subscription.status === 'active' ? localize('Actif', 'Active') : subscription.status}
                 </Badge>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-300">Crédits mensuels</p>
+                <p className="text-xs uppercase tracking-wide text-slate-300">
+                  {localize('Crédits mensuels', 'Monthly credits')}
+                </p>
                 <p className="mt-2 text-2xl font-semibold text-white">{subscription.credits_limit}</p>
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wide text-slate-300">Dernière mise à jour</p>
+                <p className="text-xs uppercase tracking-wide text-slate-300">
+                  {localize('Dernière mise à jour', 'Last update')}
+                </p>
                 <p className="mt-2 text-sm text-slate-200">
-                  {subscription.updated_at ? new Date(subscription.updated_at).toLocaleDateString('fr-FR') : '—'}
+                  {subscription.updated_at ? new Date(subscription.updated_at).toLocaleDateString(locale) : '—'}
                 </p>
               </div>
             </CardContent>
@@ -408,7 +462,7 @@ export default function SubscriptionPage() {
         )}
 
         <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 justify-items-center">
-          {plans
+          {planConfigs
             .filter((plan) => plan.id !== 'enterprise')
             .map((plan) => {
             const Icon = plan.icon;
@@ -426,12 +480,12 @@ export default function SubscriptionPage() {
               >
                 {plan.popular && (
                   <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 transform bg-blue-600 px-6 py-1 text-xs uppercase tracking-wide">
-                    Populaire
+                    {localize('Populaire', 'Popular')}
                   </Badge>
                 )}
                 {isCurrentPlan && (
                   <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 transform bg-green-600 px-6 py-1 text-xs uppercase tracking-wide">
-                    Actuel
+                    {localize('Actuel', 'Current')}
                   </Badge>
                 )}
                 <CardHeader>
@@ -451,7 +505,9 @@ export default function SubscriptionPage() {
                       <span className="text-4xl font-bold text-slate-900">{plan.price}</span>
                       {plan.period && <span className="text-slate-600 ml-1">{plan.period}</span>}
                     </div>
-                    <p className="text-sm text-slate-600 mt-1">{plan.creditsLabel} crédits/mois</p>
+                    <p className="text-sm text-slate-600 mt-1">
+                      {plan.creditsLabel} {localize('crédits/mois', 'credits/month')}
+                    </p>
                   </div>
 
                   <ul className="space-y-3">
@@ -469,28 +525,31 @@ export default function SubscriptionPage() {
                     onClick={() => {
                       if (isEnterprise) {
                         return handleSubscribe(plan.id, plan.creditsLimit, {
-                          successMessage: 'Plan Enterprise activé. Notre équipe vous contactera pour la configuration avancée.',
+                          successMessage: localize(
+                            'Plan Enterprise activé. Notre équipe vous contactera pour la configuration avancée.',
+                            'Enterprise plan activated. Our team will contact you for advanced setup.'
+                          ),
                         });
                       }
                       return plan.id === 'free'
-                        ? handleSubscribe(plan.id, plan.creditsLimit, { successMessage: 'Abonnement activé.' })
+                        ? handleSubscribe(plan.id, plan.creditsLimit, { successMessage: localize('Abonnement activé.', 'Plan activated.') })
                         : handleStripeCheckout(plan);
                     }}
                     disabled={isCurrentPlan || actionLoadingPlan === plan.id}
                   >
                     {isCurrentPlan ? (
-                      'Plan actuel'
+                      localize('Plan actuel', 'Current plan')
                     ) : actionLoadingPlan === plan.id ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Traitement...
+                        {localize('Traitement...', 'Processing...')}
                       </>
                     ) : plan.id === 'free' ? (
-                      'Choisir ce plan'
+                      localize('Choisir ce plan', 'Choose this plan')
                     ) : isEnterprise ? (
-                      'Souscrire'
+                      localize('Souscrire', 'Subscribe')
                     ) : (
-                      'Souscrire'
+                      localize('Souscrire', 'Subscribe')
                     )}
                   </Button>
                 </CardContent>
@@ -501,25 +560,40 @@ export default function SubscriptionPage() {
 
         <Card className="mx-auto max-w-4xl">
           <CardHeader>
-            <CardTitle>Questions fréquentes</CardTitle>
+            <CardTitle>{localize('Questions fréquentes', 'Frequently asked questions')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <h4 className="font-medium text-slate-900 mb-1">Comment fonctionnent les crédits ?</h4>
+              <h4 className="font-medium text-slate-900 mb-1">
+                {localize('Comment fonctionnent les crédits ?', 'How do credits work?')}
+              </h4>
               <p className="text-sm text-slate-600">
-                Chaque scan consomme 1 crédit, qu'il soit léger ou complet. Les crédits sont renouvelés chaque mois.
+                {localize(
+                  "Chaque scan consomme 1 crédit, qu'il soit léger ou complet. Les crédits sont renouvelés chaque mois.",
+                  'Each scan costs 1 credit, whether light or full. Credits renew every month.'
+                )}
               </p>
             </div>
             <div>
-              <h4 className="font-medium text-slate-900 mb-1">Puis-je changer de plan à tout moment ?</h4>
+              <h4 className="font-medium text-slate-900 mb-1">
+                {localize('Puis-je changer de plan à tout moment ?', 'Can I change plans at any time?')}
+              </h4>
               <p className="text-sm text-slate-600">
-                Oui, vous pouvez upgrader ou downgrader votre plan à tout moment. Les changements prennent effet immédiatement.
+                {localize(
+                  'Oui, vous pouvez upgrader ou downgrader votre plan à tout moment. Les changements prennent effet immédiatement.',
+                  'Yes, you can upgrade or downgrade whenever you want. Changes take effect immediately.'
+                )}
               </p>
             </div>
             <div>
-              <h4 className="font-medium text-slate-900 mb-1">Les crédits non utilisés sont-ils reportés ?</h4>
+              <h4 className="font-medium text-slate-900 mb-1">
+                {localize('Les crédits non utilisés sont-ils reportés ?', 'Do unused credits roll over?')}
+              </h4>
               <p className="text-sm text-slate-600">
-                Non, les crédits non utilisés ne sont pas reportés au mois suivant. Ils sont réinitialisés à chaque nouveau cycle.
+                {localize(
+                  'Non, les crédits non utilisés ne sont pas reportés au mois suivant. Ils sont réinitialisés à chaque nouveau cycle.',
+                  'No, unused credits do not roll over to the next month. They reset every cycle.'
+                )}
               </p>
             </div>
           </CardContent>

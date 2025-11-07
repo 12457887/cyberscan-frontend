@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -16,6 +17,8 @@ export default function ResetPasswordPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [hasSession, setHasSession] = useState(false);
+  const { choose } = useLanguage();
+  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -35,21 +38,25 @@ export default function ResetPasswordPage() {
     setMessage(null);
 
     if (!newPassword || newPassword.length < 8) {
-      setMessage('Le mot de passe doit contenir au moins 8 caractères.');
+      setMessage(
+        localize('Le mot de passe doit contenir au moins 8 caractères.', 'Password must be at least 8 characters.')
+      );
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setMessage('Les mots de passe ne correspondent pas.');
+      setMessage(localize('Les mots de passe ne correspondent pas.', 'Passwords do not match.'));
       return;
     }
 
     setLoading(true);
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) {
-      setMessage('Impossible de mettre à jour le mot de passe.');
+      setMessage(localize('Impossible de mettre à jour le mot de passe.', 'Unable to update the password.'));
     } else {
-      setMessage('Mot de passe mis à jour. Vous pouvez maintenant vous connecter.');
+      setMessage(
+        localize('Mot de passe mis à jour. Vous pouvez maintenant vous connecter.', 'Password updated. You can now sign in.')
+      );
       setNewPassword('');
       setConfirmPassword('');
     }
@@ -64,17 +71,19 @@ export default function ResetPasswordPage() {
             <Shield className="w-7 h-7 text-white" />
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold">Réinitialisation</CardTitle>
-            <CardDescription>Définissez un nouveau mot de passe sécurisé</CardDescription>
+            <CardTitle className="text-2xl font-bold">{localize('Réinitialisation', 'Reset password')}</CardTitle>
+            <CardDescription>
+              {localize('Définissez un nouveau mot de passe sécurisé', 'Set a new secure password')}
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent>
           {!sessionChecked ? (
-            <div className="text-center text-sm text-slate-600">Chargement...</div>
+            <div className="text-center text-sm text-slate-600">{localize('Chargement...', 'Loading...')}</div>
           ) : hasSession ? (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="newPassword">Nouveau mot de passe</Label>
+                <Label htmlFor="newPassword">{localize('Nouveau mot de passe', 'New password')}</Label>
                 <Input
                   id="newPassword"
                   type="password"
@@ -86,7 +95,7 @@ export default function ResetPasswordPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>
+                <Label htmlFor="confirmPassword">{localize('Confirmer le mot de passe', 'Confirm password')}</Label>
                 <Input
                   id="confirmPassword"
                   type="password"
@@ -113,25 +122,25 @@ export default function ResetPasswordPage() {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Mise à jour...
+                    {localize('Mise à jour...', 'Updating...')}
                   </>
                 ) : (
-                  'Confirmer'
+                  localize('Confirmer', 'Confirm')
                 )}
               </Button>
             </form>
           ) : (
             <div className="space-y-4 text-center text-sm text-slate-600">
-              <p>Le lien de réinitialisation est invalide ou expiré.</p>
+              <p>{localize('Le lien de réinitialisation est invalide ou expiré.', 'The reset link is invalid or expired.')}</p>
               <Link href="/forgot-password" className="text-blue-600 hover:underline font-medium">
-                Demander un nouveau lien
+                {localize('Demander un nouveau lien', 'Request a new link')}
               </Link>
             </div>
           )}
 
           <div className="mt-6 text-center text-sm">
             <Link href="/login" className="text-blue-600 hover:underline font-medium">
-              Retour à la connexion
+              {localize('Retour à la connexion', 'Back to sign in')}
             </Link>
           </div>
         </CardContent>

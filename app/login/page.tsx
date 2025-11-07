@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, Loader2, LogIn } from 'lucide-react';
+import { Shield, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function LoginPage() {
@@ -18,6 +19,8 @@ export default function LoginPage() {
   const [oauthLoading, setOauthLoading] = useState(false);
   const { signIn, signInWithGoogle } = useAuth();
   const router = useRouter();
+  const { choose } = useLanguage();
+  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,8 +44,11 @@ export default function LoginPage() {
     if (error) {
       const message =
         error.message && error.message.includes('provider is not enabled')
-          ? 'La connexion Google n\'est pas encore activée. Contactez un administrateur.'
-          : error.message || 'Erreur lors de la connexion Google';
+          ? localize(
+              "La connexion Google n'est pas encore activée. Contactez un administrateur.",
+              'Google sign-in is not enabled yet. Please contact an administrator.'
+            )
+          : error.message || localize('Erreur lors de la connexion Google', 'Error while signing in with Google');
       setError(message);
       setOauthLoading(false);
     }
@@ -57,7 +63,9 @@ export default function LoginPage() {
           </div>
           <div>
             <CardTitle className="text-2xl font-bold">CyberScan</CardTitle>
-            <CardDescription>Connexion à votre compte</CardDescription>
+            <CardDescription>
+              {localize('Connexion à votre compte', 'Sign in to your account')}
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent>
@@ -74,7 +82,7 @@ export default function LoginPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Mot de passe</Label>
+              <Label htmlFor="password">{localize('Mot de passe', 'Password')}</Label>
               <Input
                 id="password"
                 type="password"
@@ -86,7 +94,7 @@ export default function LoginPage() {
             </div>
             <div className="text-right text-sm">
               <Link href="/forgot-password" className="text-blue-600 hover:underline font-medium">
-                Mot de passe oublié ?
+                {localize('Mot de passe oublié ?', 'Forgot password?')}
               </Link>
             </div>
             {error && (
@@ -98,10 +106,10 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Connexion...
+                  {localize('Connexion...', 'Signing in...')}
                 </>
               ) : (
-                'Se connecter'
+                localize('Se connecter', 'Sign in')
               )}
             </Button>
             <div className="relative py-2">
@@ -109,7 +117,7 @@ export default function LoginPage() {
                 <span className="w-full border-t border-slate-200" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-slate-500">ou</span>
+                <span className="bg-white px-2 text-slate-500">{localize('ou', 'or')}</span>
               </div>
             </div>
             <Button
@@ -122,22 +130,22 @@ export default function LoginPage() {
               {oauthLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Connexion...
+                  {localize('Connexion...', 'Signing in...')}
                 </>
               ) : (
                 <>
                   <span className="mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-bold text-red-500">
                     G
                   </span>
-                  Continuer avec Google
+                  {localize('Continuer avec Google', 'Continue with Google')}
                 </>
               )}
             </Button>
           </form>
           <div className="mt-6 text-center text-sm">
-            <span className="text-slate-600">Pas encore de compte ?</span>{' '}
+            <span className="text-slate-600">{localize('Pas encore de compte ?', 'No account yet?')}</span>{' '}
             <Link href="/register" className="text-blue-600 hover:underline font-medium">
-              S'inscrire
+              {localize("S'inscrire", 'Sign up')}
             </Link>
           </div>
         </CardContent>

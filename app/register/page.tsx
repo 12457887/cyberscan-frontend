@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,6 +19,8 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const { signUp } = useAuth();
   const router = useRouter();
+  const { choose } = useLanguage();
+  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,13 +46,13 @@ export default function RegisterPage() {
           </div>
           <div>
             <CardTitle className="text-2xl font-bold">CyberScan</CardTitle>
-            <CardDescription>Créez votre compte</CardDescription>
+            <CardDescription>{localize('Créez votre compte', 'Create your account')}</CardDescription>
           </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="fullName">Nom complet</Label>
+              <Label htmlFor="fullName">{localize('Nom complet', 'Full name')}</Label>
               <Input
                 id="fullName"
                 type="text"
@@ -71,7 +74,7 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Mot de passe</Label>
+              <Label htmlFor="password">{localize('Mot de passe', 'Password')}</Label>
               <Input
                 id="password"
                 type="password"
@@ -91,17 +94,19 @@ export default function RegisterPage() {
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Inscription...
+                  {localize('Inscription...', 'Signing up...')}
                 </>
               ) : (
-                'S\'inscrire'
+                localize("S'inscrire", 'Sign up')
               )}
             </Button>
           </form>
           <div className="mt-6 text-center text-sm">
-            <span className="text-slate-600">Vous avez déjà un compte ?</span>{' '}
+            <span className="text-slate-600">
+              {localize('Vous avez déjà un compte ?', 'Already have an account?')}
+            </span>{' '}
             <Link href="/login" className="text-blue-600 hover:underline font-medium">
-              Se connecter
+              {localize('Se connecter', 'Sign in')}
             </Link>
           </div>
         </CardContent>

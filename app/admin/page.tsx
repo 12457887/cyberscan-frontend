@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
@@ -24,6 +25,18 @@ interface AdminUser {
 
 export default function AdminDashboard() {
   const { user, profile, loading: authLoading } = useAuth();
+  const { choose } = useLanguage();
+  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
+  const locale = choose({ fr: 'fr-FR', en: 'en-US' });
+  const statusLabels = useMemo(
+    () =>
+      choose({
+        fr: { admin: 'Admin', client: 'Client' },
+        en: { admin: 'Admin', client: 'Client' },
+      }),
+    [choose]
+  );
+  const loadingText = localize('Chargement...', 'Loading...');
   const router = useRouter();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [stats, setStats] = useState({
@@ -88,7 +101,7 @@ export default function AdminDashboard() {
 
   // 🗑️ Suppression utilisateur
 const handleDeleteUser = async (userId: string) => {
-  if (!confirm("Voulez-vous vraiment supprimer cet utilisateur ?")) return;
+  if (!confirm(localize('Voulez-vous vraiment supprimer cet utilisateur ?', 'Are you sure you want to delete this user?'))) return;
 
   const token = (await supabase.auth.getSession()).data.session?.access_token;
 
@@ -103,10 +116,10 @@ const handleDeleteUser = async (userId: string) => {
 
   const data = await res.json();
   if (!res.ok) {
-    alert("❌ Erreur : " + (data.detail || data.error || "échec"));
+    alert('❌ ' + localize('Erreur : ', 'Error: ') + (data.detail || data.error || localize('échec', 'failed')));
     return;
   }
-  alert("✅ Utilisateur supprimé !");
+  alert('✅ ' + localize('Utilisateur supprimé !', 'User deleted!'));
   loadAdminData();
 };
 
@@ -117,7 +130,7 @@ const handleDeleteUser = async (userId: string) => {
     return (
       <DashboardLayout>
         <div className="text-center py-12">
-          <p className="text-slate-600">Chargement...</p>
+          <p className="text-slate-600">{loadingText}</p>
         </div>
       </DashboardLayout>
     );
@@ -131,13 +144,13 @@ const handleDeleteUser = async (userId: string) => {
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Administration</h1>
-          <p className="text-slate-600 mt-1">Vue d'ensemble de la plateforme</p>
+          <h1 className="text-3xl font-bold text-slate-900">{localize('Administration', 'Administration')}</h1>
+          <p className="text-slate-600 mt-1">{localize("Vue d'ensemble de la plateforme", 'Platform overview')}</p>
         </div>
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
-            <p className="font-semibold">Erreur :</p>
+            <p className="font-semibold">{localize('Erreur :', 'Error:')}</p>
             <p className="text-sm mt-1">{error}</p>
           </div>
         )}
@@ -146,40 +159,40 @@ const handleDeleteUser = async (userId: string) => {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Utilisateurs</CardTitle>
+              <CardTitle className="text-sm font-medium">{localize('Utilisateurs', 'Users')}</CardTitle>
               <Users className="h-4 w-4 text-blue-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.totalUsers}</div>
-              <p className="text-xs text-slate-600 mt-2">total inscrits</p>
+              <p className="text-xs text-slate-600 mt-2">{localize('total inscrits', 'total registered')}</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Scans Total</CardTitle>
+              <CardTitle className="text-sm font-medium">{localize('Scans Total', 'Total scans')}</CardTitle>
               <Activity className="h-4 w-4 text-green-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.totalScans}</div>
-              <p className="text-xs text-slate-600 mt-2">scans effectués</p>
+              <p className="text-xs text-slate-600 mt-2">{localize('scans effectués', 'scans run')}</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Abonnements Actifs</CardTitle>
+              <CardTitle className="text-sm font-medium">{localize('Abonnements Actifs', 'Active subscriptions')}</CardTitle>
               <CreditCard className="h-4 w-4 text-orange-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.activeSubscriptions}</div>
-              <p className="text-xs text-slate-600 mt-2">abonnements actifs</p>
+              <p className="text-xs text-slate-600 mt-2">{localize('abonnements actifs', 'active plans')}</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Taux d'activité</CardTitle>
+              <CardTitle className="text-sm font-medium">{localize("Taux d'activité", 'Activity rate')}</CardTitle>
               <TrendingUp className="h-4 w-4 text-blue-600" />
             </CardHeader>
             <CardContent>
@@ -188,7 +201,7 @@ const handleDeleteUser = async (userId: string) => {
                   ? Math.round((stats.activeSubscriptions / stats.totalUsers) * 100)
                   : 0}%
               </div>
-              <p className="text-xs text-slate-600 mt-2">utilisateurs actifs</p>
+              <p className="text-xs text-slate-600 mt-2">{localize('utilisateurs actifs', 'active users')}</p>
             </CardContent>
           </Card>
         </div>
@@ -196,21 +209,23 @@ const handleDeleteUser = async (userId: string) => {
         {/* 👥 Liste des utilisateurs */}
         <Card>
           <CardHeader>
-            <CardTitle>Utilisateurs</CardTitle>
-            <CardDescription>Liste complète avec crédits et abonnements</CardDescription>
+            <CardTitle>{localize('Utilisateurs', 'Users')}</CardTitle>
+            <CardDescription>
+              {localize('Liste complète avec crédits et abonnements', 'Full list with credits and subscriptions')}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm border border-slate-200 rounded-lg">
                 <thead className="bg-slate-100 text-slate-700">
                   <tr>
-                    <th className="p-2 text-left">Nom</th>
+                    <th className="p-2 text-left">{localize('Nom', 'Name')}</th>
                     <th className="p-2 text-left">Email</th>
-                    <th className="p-2 text-left">Rôle</th>
-                    <th className="p-2 text-left">Crédits restants</th>
-                    <th className="p-2 text-left">Abonnement</th>
-                    <th className="p-2 text-left">Expiration</th>
-                    <th className="p-2 text-left">Action</th>
+                    <th className="p-2 text-left">{localize('Rôle', 'Role')}</th>
+                    <th className="p-2 text-left">{localize('Crédits restants', 'Remaining credits')}</th>
+                    <th className="p-2 text-left">{localize('Abonnement', 'Plan')}</th>
+                    <th className="p-2 text-left">{localize('Expiration', 'Expiration')}</th>
+                    <th className="p-2 text-left">{localize('Action', 'Action')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -221,14 +236,14 @@ const handleDeleteUser = async (userId: string) => {
                         <td className="p-2">{u.email}</td>
                         <td className="p-2">
                           <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>
-                            {u.role || 'user'}
+                            {u.role ? statusLabels[u.role as keyof typeof statusLabels] ?? u.role : 'user'}
                           </Badge>
                         </td>
                         <td className="p-2">{u.remaining_credits ?? 0}</td>
                         <td className="p-2 capitalize">{u.plan_type || '—'}</td>
                         <td className="p-2">
                           {u.expires_at
-                            ? new Date(u.expires_at).toLocaleDateString('fr-FR')
+                            ? new Date(u.expires_at).toLocaleDateString(locale)
                             : '—'}
                         </td>
                         <td className="p-2">

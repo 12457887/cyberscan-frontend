@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +27,24 @@ const PLAN_CONCURRENCY: Record<string, number> = {
 
 export default function ScanPage() {
   const { user, profile } = useAuth();
+  const { choose } = useLanguage();
+  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
+  const planNames = useMemo(
+    () =>
+      choose({
+        fr: { free: 'Gratuit', basic: 'Basic', pro: 'Pro', enterprise: 'Enterprise', admin: 'Admin' },
+        en: { free: 'Free', basic: 'Basic', pro: 'Pro', enterprise: 'Enterprise', admin: 'Admin' },
+      }),
+    [choose]
+  );
+  const frequencyLabels = useMemo(
+    () =>
+      choose({
+        fr: { weekly: 'Hebdomadaire', monthly: 'Mensuelle' },
+        en: { weekly: 'Weekly', monthly: 'Monthly' },
+      }),
+    [choose]
+  );
   const router = useRouter();
   const [siteName, setSiteName] = useState('');
   const [siteUrl, setSiteUrl] = useState('');
@@ -117,21 +136,25 @@ export default function ScanPage() {
       const concurrencyLimit = PLAN_CONCURRENCY[planType] ?? 1;
 
       if (planType === 'free' && scanType === 'complete') {
-        setError('Le plan Gratuit ne permet pas les scans complets.');
+        setError(
+          localize('Le plan Gratuit ne permet pas les scans complets.', 'The Free plan does not allow full scans.')
+        );
         setLoading(false);
         stopProgress(false);
         return;
       }
 
       if (scheduleEnabled && !canSchedule) {
-        setError('La planification automatique est réservée aux plans Pro et Enterprise.');
+        setError(
+          localize('La planification automatique est réservée aux plans Pro et Enterprise.', 'Automatic scheduling is available on Pro and Enterprise plans.')
+        );
         setLoading(false);
         stopProgress(false);
         return;
       }
 
       if (scheduleEnabled && scheduleFrequency === 'none') {
-        setError('Sélectionnez une fréquence pour la planification.');
+        setError(localize('Sélectionnez une fréquence pour la planification.', 'Select a scheduling frequency.'));
         setLoading(false);
         stopProgress(false);
         return;
@@ -140,14 +163,14 @@ export default function ScanPage() {
       let scheduleStartIso: string | null = null;
       if (scheduleEnabled && scheduleFrequency !== 'none') {
         if (!scheduleStartAt) {
-          setError('Merci de préciser la date de premier lancement pour la planification.');
+          setError(localize('Merci de préciser la date de premier lancement pour la planification.', 'Please provide a start date for scheduling.'));
           setLoading(false);
           stopProgress(false);
           return;
         }
         const parsedStart = new Date(scheduleStartAt);
         if (Number.isNaN(parsedStart.getTime())) {
-          setError('Date de planification invalide.');
+          setError(localize('Date de planification invalide.', 'Invalid schedule date.'));
           setLoading(false);
           stopProgress(false);
           return;
@@ -160,18 +183,23 @@ export default function ScanPage() {
         .filter(Boolean);
 
       if (rawEntries.length === 0) {
-        throw new Error('Veuillez saisir au moins une URL.');
+        throw new Error(localize('Veuillez saisir au moins une URL.', 'Please enter at least one URL.'));
       }
 
       if (concurrencyLimit <= 1 && rawEntries.length > 1) {
-        setError('Votre abonnement permet un seul scan à la fois.');
+        setError(localize('Votre abonnement permet un seul scan à la fois.', 'Your plan allows only one scan at a time.'));
         setLoading(false);
         stopProgress(false);
         return;
       }
 
       if (rawEntries.length > concurrencyLimit) {
-        setError(`Votre plan autorise au maximum ${concurrencyLimit} scans simultanés. Réduisez la liste ou passez à un plan supérieur.`);
+        setError(
+          localize(
+            `Votre plan autorise au maximum ${concurrencyLimit} scans simultanés. Réduisez la liste ou passez à un plan supérieur.`,
+            `Your plan allows a maximum of ${concurrencyLimit} concurrent scans. Reduce the list or upgrade your plan.`
+          )
+        );
         setLoading(false);
         stopProgress(false);
         return;
@@ -187,7 +215,7 @@ export default function ScanPage() {
           const url = new URL(candidate);
           normalizedUrls.push(url.toString());
         } catch (err) {
-          setError(`URL invalide: ${entry}`);
+          setError(localize(`URL invalide: ${entry}`, `Invalid URL: ${entry}`));
           setLoading(false);
           stopProgress(false);
           return;
@@ -206,7 +234,7 @@ export default function ScanPage() {
         creditsData = data || { remaining_credits: 0, used_credits: 0 };
 
         if (!creditsData || (creditsData.remaining_credits || 0) < normalizedUrls.length) {
-          setError('Crédits insuffisants pour lancer cette série de scans.');
+          setError(localize('Crédits insuffisants pour lancer cette série de scans.', 'Not enough credits to launch this batch of scans.'));
           setLoading(false);
           stopProgress(false);
           return;
@@ -239,7 +267,7 @@ export default function ScanPage() {
         .select();
 
       if (scanError || !scanRows || scanRows.length === 0) {
-        throw scanError || new Error('Impossible de créer les enregistrements de scan.');
+        throw scanError || new Error(localize('Impossible de créer les enregistrements de scan.', 'Unable to create scan records.'));
       }
 
       if (!DISABLE_CREDIT_CHECK) {
@@ -256,8 +284,11 @@ export default function ScanPage() {
         scanRows.map((row, index) => ({
           user_id: user.id,
           scan_id: row.id,
-          title: 'Scan lancé',
-          message: `Le scan de ${displayNames[index]} (${row.site_url}) a été lancé avec succès.`,
+          title: localize('Scan lancé', 'Scan started'),
+          message: localize(
+            `Le scan de ${displayNames[index]} (${row.site_url}) a été lancé avec succès.`,
+            `Scan for ${displayNames[index]} (${row.site_url}) started successfully.`
+          ),
           type: 'system',
           severity: 'info',
         }))
@@ -280,16 +311,21 @@ export default function ScanPage() {
 
         if (scheduleError) {
           console.error('Erreur planification:', scheduleError);
-          setError('Le scan a été lancé, mais la planification automatique n\'a pas pu être enregistrée.');
+          setError(
+            localize(
+              "Le scan a été lancé, mais la planification automatique n'a pas pu être enregistrée.",
+              'The scan started but automatic scheduling could not be saved.'
+            )
+          );
         } else {
           await supabase.from('alerts').insert({
             user_id: user.id,
             scan_id: null,
-            title: 'Planification confirmée',
+            title: localize('Planification confirmée', 'Scheduling confirmed'),
             message:
               scheduleFrequency === 'weekly'
-                ? 'Vos scans seront répétés chaque semaine automatiquement.'
-                : 'Vos scans seront répétés chaque mois automatiquement.',
+                ? localize('Vos scans seront répétés chaque semaine automatiquement.', 'Your scans will repeat weekly.')
+                : localize('Vos scans seront répétés chaque mois automatiquement.', 'Your scans will repeat monthly.'),
             type: 'system',
             severity: 'info',
           });
@@ -318,7 +354,7 @@ export default function ScanPage() {
       if (!response.ok) {
         const text = await response.text();
         console.error('Erreur API FastAPI:', text);
-        throw new Error('Échec du lancement du scan.');
+        throw new Error(localize('Échec du lancement du scan.', 'Scan launch failed.'));
       }
 
       const result = await response.json();
@@ -342,7 +378,7 @@ export default function ScanPage() {
       router.push('/dashboard/reports');
     } catch (err) {
       console.error('Error starting scan:', err);
-      setError('Une erreur est survenue lors du lancement du scan.');
+      setError(localize('Une erreur est survenue lors du lancement du scan.', 'An error occurred while starting the scan.'));
       stopProgress(false);
     } finally {
       setLoading(false);
@@ -359,34 +395,40 @@ export default function ScanPage() {
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex justify-between items-start">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900">Nouveau Scan</h1>
-            <p className="text-slate-600 mt-1">Lancez une analyse de sécurité de votre site web</p>
+            <h1 className="text-3xl font-bold text-slate-900">
+              {localize('Nouveau Scan', 'New scan')}
+            </h1>
+            <p className="text-slate-600 mt-1">
+              {localize('Lancez une analyse de sécurité de votre site web', 'Launch a security scan for your website')}
+            </p>
           </div>
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={() => router.push('/dashboard?section=support')}
             className="flex items-center gap-2"
           >
             <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
-            Support Technique
+            {localize('Support Technique', 'Support')}
           </Button>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Configuration du scan</CardTitle>
-            <CardDescription>Entrez les informations du site à scanner</CardDescription>
+            <CardTitle>{localize('Configuration du scan', 'Scan configuration')}</CardTitle>
+            <CardDescription>
+              {localize('Entrez les informations du site à scanner', 'Provide the site information to scan')}
+            </CardDescription>
           </CardHeader>
 
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* === Nom du site === */}
               <div className="space-y-2">
-                <Label htmlFor="siteName">Nom du site</Label>
+                <Label htmlFor="siteName">{localize('Nom du site', 'Site name')}</Label>
                 <Input
                   id="siteName"
                   type="text"
-                  placeholder="Mon Site Web"
+                  placeholder={localize('Mon Site Web', 'My Website')}
                   value={siteName}
                   onChange={(e) => setSiteName(e.target.value)}
                   required={PLAN_CONCURRENCY[planType] <= 1}
@@ -395,7 +437,7 @@ export default function ScanPage() {
 
               {/* === URL === */}
               <div className="space-y-2">
-                <Label htmlFor="siteUrl">URL du site</Label>
+                <Label htmlFor="siteUrl">{localize('URL du site', 'Website URL')}</Label>
                 {PLAN_CONCURRENCY[planType] > 1 ? (
                   <Textarea
                     id="siteUrl"
@@ -422,7 +464,7 @@ export default function ScanPage() {
 
               {/* === Type de scan === */}
               <div className="space-y-3">
-                <Label>Type de scan</Label>
+                <Label>{localize('Type de scan', 'Scan type')}</Label>
                 <RadioGroup
                   value={scanType}
                   onValueChange={(v) => setScanType(v as 'light' | 'complete')}
@@ -432,13 +474,16 @@ export default function ScanPage() {
                     <div className="flex-1">
                       <Label htmlFor="light" className="cursor-pointer flex items-center">
                         <Zap className="w-4 h-4 mr-2 text-yellow-600" />
-                        <span className="font-medium">Scan Léger</span>
+                        <span className="font-medium">{localize('Scan Léger', 'Light scan')}</span>
                       </Label>
                       <p className="text-sm text-slate-600 mt-1">
-                        Analyse rapide des vulnérabilités courantes. Idéal pour un aperçu général.
+                        {localize(
+                          'Analyse rapide des vulnérabilités courantes. Idéal pour un aperçu général.',
+                          'Quick check for common vulnerabilities. Ideal for a general overview.'
+                        )}
                       </p>
                       <p className="text-xs text-slate-500 mt-1">
-                        Durée: ~5 minutes | Coût: 1 crédit
+                        {localize('Durée: ~5 minutes | Coût: 1 crédit', 'Duration: ~5 minutes | Cost: 1 credit')}
                       </p>
                     </div>
                   </div>
@@ -450,10 +495,13 @@ export default function ScanPage() {
                   <div className="flex items-start justify-between">
                     <div>
                       <Label className="flex items-center gap-2">
-                        Planification automatique
+                        {localize('Planification automatique', 'Automatic scheduling')}
                       </Label>
                       <p className="text-xs text-slate-500 mt-1">
-                        Programmez des scans récurrents et recevez les rapports sans action manuelle.
+                        {localize(
+                          'Programmez des scans récurrents et recevez les rapports sans action manuelle.',
+                          'Schedule recurring scans and receive reports automatically.'
+                        )}
                       </p>
                     </div>
                     <Switch
@@ -483,19 +531,23 @@ export default function ScanPage() {
                   {scheduleEnabled && (
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="scheduleFrequency">Fréquence</Label>
+                        <Label htmlFor="scheduleFrequency">
+                          {localize('Fréquence', 'Frequency')}
+                        </Label>
                         <select
                           id="scheduleFrequency"
                           value={scheduleFrequency}
                           onChange={(e) => setScheduleFrequency(e.target.value as 'weekly' | 'monthly')}
                           className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                         >
-                          <option value="weekly">Hebdomadaire</option>
-                          <option value="monthly">Mensuelle</option>
+                          <option value="weekly">{frequencyLabels.weekly}</option>
+                          <option value="monthly">{frequencyLabels.monthly}</option>
                         </select>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="scheduleStart">Première exécution</Label>
+                        <Label htmlFor="scheduleStart">
+                          {localize('Première exécution', 'First run')}
+                        </Label>
                         <Input
                           id="scheduleStart"
                           type="datetime-local"
@@ -519,17 +571,17 @@ export default function ScanPage() {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Analyse en cours... {Math.round(scanProgress)}%
+                    {localize('Analyse en cours...', 'Scan in progress...')} {Math.round(scanProgress)}%
                   </>
                 ) : (
-                  'Lancer le scan'
+                  localize('Lancer le scan', 'Start scan')
                 )}
               </Button>
 
               {loading && (
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs text-slate-500">
-                    <span>Progression du scan</span>
+                    <span>{localize('Progression du scan', 'Scan progress')}</span>
                     <span>{Math.round(scanProgress)}%</span>
                   </div>
                   <Progress value={scanProgress} />

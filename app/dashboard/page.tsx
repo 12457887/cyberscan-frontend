@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase, Credits, Scan, Alert, Ticket } from '@/lib/supabase';
 import { TicketsPanel } from '@/components/ui/tickets-panel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,13 +21,6 @@ import {
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { useSearchParams, useRouter } from 'next/navigation';
 
-const statusLabels: Record<Scan['status'], string> = {
-  pending: 'En attente',
-  in_progress: 'En cours',
-  completed: 'Terminé',
-  failed: 'Échec',
-};
-
 const statusStyles: Record<Scan['status'], string> = {
   pending: 'bg-slate-200 text-slate-700',
   in_progress: 'bg-blue-100 text-blue-700',
@@ -40,13 +34,6 @@ const severityStyles: Record<Alert['severity'], string> = {
   error: 'text-red-600',
 };
 
-const riskLabels: Record<NonNullable<Scan['risk_level']>, string> = {
-  low: 'Faible',
-  medium: 'Moyen',
-  high: 'Élevé',
-  critical: 'Critique',
-};
-
 const riskStyles: Record<NonNullable<Scan['risk_level']>, string> = {
   low: 'bg-green-100 text-green-700',
   medium: 'bg-amber-100 text-amber-700',
@@ -57,6 +44,11 @@ const riskStyles: Record<NonNullable<Scan['risk_level']>, string> = {
 const DAYS_RANGE = 14;
 const SEVERITY_KEYS = ['low', 'medium', 'high', 'critical'] as const;
 type SeverityKey = (typeof SEVERITY_KEYS)[number];
+
+type VulnerabilityChartConfig = Record<
+  'critical' | 'high' | 'medium' | 'low',
+  { label: string; color: string }
+>;
 
 type VulnerabilityTrendPoint = {
   dateKey: string;
@@ -69,11 +61,11 @@ type VulnerabilityTrendPoint = {
 
 const buildTrendBase = (
   startDate: Date,
-  days: number
+  days: number,
+  formatter: Intl.DateTimeFormat
 ): [VulnerabilityTrendPoint[], Map<string, VulnerabilityTrendPoint>] => {
   const base: VulnerabilityTrendPoint[] = [];
   const map = new Map<string, VulnerabilityTrendPoint>();
-  const formatter = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'short' });
 
   for (let i = 0; i < days; i++) {
     const date = new Date(startDate);
@@ -94,15 +86,49 @@ const buildTrendBase = (
   return [base, map];
 };
 
-const vulnerabilityChartConfig = {
-  critical: { label: 'Critique', color: 'hsl(0, 82%, 60%)' },
-  high: { label: 'Élevé', color: 'hsl(12, 82%, 55%)' },
-  medium: { label: 'Moyen', color: 'hsl(38, 85%, 55%)' },
-  low: { label: 'Faible', color: 'hsl(210, 85%, 55%)' },
-} as const;
-
 export default function DashboardPage() {
   const { user, profile } = useAuth();
+  const { choose } = useLanguage();
+  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
+  const locale = choose({ fr: 'fr-FR', en: 'en-US' });
+  const statusLabels = useMemo(
+    () =>
+      choose({
+        fr: { pending: 'En attente', in_progress: 'En cours', completed: 'Terminé', failed: 'Échec' },
+        en: { pending: 'Pending', in_progress: 'In progress', completed: 'Completed', failed: 'Failed' },
+      }),
+    [choose]
+  );
+  const riskLabels = useMemo(
+    () =>
+      choose({
+        fr: { low: 'Faible', medium: 'Moyen', high: 'Élevé', critical: 'Critique' },
+        en: { low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical' },
+      }),
+    [choose]
+  );
+  const chartConfig = useMemo<VulnerabilityChartConfig>(
+    () =>
+      choose({
+        fr: {
+          critical: { label: 'Critique', color: 'hsl(0, 82%, 60%)' },
+          high: { label: 'Élevé', color: 'hsl(12, 82%, 55%)' },
+          medium: { label: 'Moyen', color: 'hsl(38, 85%, 55%)' },
+          low: { label: 'Faible', color: 'hsl(210, 85%, 55%)' },
+        },
+        en: {
+          critical: { label: 'Critical', color: 'hsl(0, 82%, 60%)' },
+          high: { label: 'High', color: 'hsl(12, 82%, 55%)' },
+          medium: { label: 'Medium', color: 'hsl(38, 85%, 55%)' },
+          low: { label: 'Low', color: 'hsl(210, 85%, 55%)' },
+        },
+      }),
+    [choose]
+  );
+  const dateFormatter = useMemo(
+    () => new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short' }),
+    [locale]
+  );
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeSection = searchParams?.get('section') ?? 'overview';
@@ -116,6 +142,50 @@ export default function DashboardPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const isAdminUser = profile?.role === 'admin';
+  const planNames = useMemo(
+    () =>
+      choose({
+        fr: { free: 'Gratuit', basic: 'Basic', pro: 'Pro', enterprise: 'Enterprise', admin: 'Admin' },
+        en: { free: 'Free', basic: 'Basic', pro: 'Pro', enterprise: 'Enterprise', admin: 'Admin' },
+      }),
+    [choose]
+  );
+  const featureLabels = useMemo(
+    () =>
+      choose({
+        fr: {
+          advancedAnalyzer: 'Analyseur avancé',
+          autoScheduling: 'Planification automatique',
+          cmsDetection: 'Détection CMS',
+          fullScan: 'Scan complet',
+          lightScanOnly: 'Scan léger uniquement',
+        },
+        en: {
+          advancedAnalyzer: 'Advanced analyzer',
+          autoScheduling: 'Automatic scheduling',
+          cmsDetection: 'CMS detection',
+          fullScan: 'Full scan',
+          lightScanOnly: 'Light scan only',
+        },
+      }),
+    [choose]
+  );
+  const scanModeLabels = useMemo(
+    () =>
+      choose({
+        fr: { light: 'Léger', complete: 'Complet' },
+        en: { light: 'Light', complete: 'Full' },
+      }),
+    [choose]
+  );
+  const alertSeverityLabels = useMemo(
+    () =>
+      choose({
+        fr: { info: 'Info', warning: 'Alerte', error: 'Erreur' },
+        en: { info: 'Info', warning: 'Warning', error: 'Error' },
+      }),
+    [choose]
+  );
 
   useEffect(() => {
     if (user) {
@@ -218,7 +288,7 @@ export default function DashboardPage() {
       setScans(scansData.slice(0, 8));
       if (alertsRes.data) setAlerts(alertsRes.data);
 
-      const [baseTrend, trendMap] = buildTrendBase(rangeStart, DAYS_RANGE);
+      const [baseTrend, trendMap] = buildTrendBase(rangeStart, DAYS_RANGE, dateFormatter);
 
       if (scansData.length) {
         const scanMap = new Map(scansData.map((scan) => [scan.id, scan]));
@@ -254,7 +324,9 @@ export default function DashboardPage() {
       setVulnerabilityTrend([...baseTrend]);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
-      setLoadError("Impossible de charger toutes les données du tableau de bord.");
+      setLoadError(
+        localize('Impossible de charger toutes les données du tableau de bord.', 'Unable to load every dashboard metric.')
+      );
     } finally {
       setLoading(false);
     }
@@ -266,7 +338,12 @@ export default function DashboardPage() {
   const remainingCredits = credits?.remaining_credits ?? 0;
   const usedCredits = credits?.used_credits ?? 0;
   const creditDetails =
-    totalCredits > 0 ? `${remainingCredits} / ${totalCredits} restants` : 'Aucun crédit défini';
+    totalCredits > 0
+      ? localize(
+          `${remainingCredits} / ${totalCredits} restants`,
+          `${remainingCredits} / ${totalCredits} remaining`
+        )
+      : localize('Aucun crédit défini', 'No credits defined');
 
   const circleClass =
     'flex h-20 w-20 items-center justify-center rounded-full border-[6px] bg-white text-xl font-semibold shadow-sm';
@@ -274,23 +351,27 @@ export default function DashboardPage() {
   const effectivePlan = plan ?? 'free';
   const isAdminEffective = effectivePlan === 'admin';
   const isAdminDisplay = isAdminUser || isAdminEffective;
-  const planLabel = planLoading ? 'Chargement...' : isAdminEffective ? 'Admin' : effectivePlan;
+  const planLabel = planLoading
+    ? localize('Chargement...', 'Loading...')
+    : isAdminEffective
+      ? localize('Admin', 'Admin')
+      : planNames[effectivePlan as keyof typeof planNames] ?? effectivePlan;
   const subscriptionBadges: string[] = [];
 
   if (isAdminEffective || effectivePlan === 'enterprise') {
-    subscriptionBadges.push('Analyseur avancé');
+    subscriptionBadges.push(featureLabels.advancedAnalyzer);
   }
   if (isAdminEffective || effectivePlan === 'enterprise' || effectivePlan === 'pro') {
-    subscriptionBadges.push('Planification automatique');
-    subscriptionBadges.push('Détection CMS');
+    subscriptionBadges.push(featureLabels.autoScheduling);
+    subscriptionBadges.push(featureLabels.cmsDetection);
   } else if (effectivePlan === 'basic') {
-    subscriptionBadges.push('Scan complet');
+    subscriptionBadges.push(featureLabels.fullScan);
   } else {
-    subscriptionBadges.push('Scan léger uniquement');
+    subscriptionBadges.push(featureLabels.lightScanOnly);
   }
 
   const formatCms = (value?: string | null) => {
-    if (!value) return 'Inconnu';
+    if (!value) return localize('Inconnu', 'Unknown');
     const lower = value.toLowerCase();
     return lower.charAt(0).toUpperCase() + lower.slice(1);
   };
@@ -303,7 +384,7 @@ export default function DashboardPage() {
 
   const getRiskBadge = (risk: Scan['risk_level']) => {
     if (!risk) {
-      return <Badge variant="secondary">N/A</Badge>;
+      return <Badge variant="secondary">{localize('N/A', 'N/A')}</Badge>;
     }
     return (
       <Badge variant="outline" className={`${riskStyles[risk]} border-transparent`}>
@@ -316,22 +397,62 @@ export default function DashboardPage() {
     SEVERITY_KEYS.some((key) => entry[key] > 0)
   );
 
+  const translateAlertContent = (alert: Alert) => {
+    if (locale === 'fr-FR') {
+      return { title: alert.title, message: alert.message };
+    }
+    if (alert.type === 'subscription') {
+      const planMatch = alert.message.match(/plan\s+([a-z]+)/i);
+      const planId = planMatch?.[1];
+      return {
+        title: 'Subscription updated',
+        message: planId
+          ? `Your subscription has been confirmed for the ${planId} plan.`
+          : 'Your subscription has been updated successfully.',
+      };
+    }
+    if (alert.type === 'scan_complete') {
+      return {
+        title: 'Scan completed',
+        message: 'Your security scan is finished. Review the report for more details.',
+      };
+    }
+    if (alert.type === 'vulnerability_found') {
+      return {
+        title: 'New vulnerability detected',
+        message: 'We found new vulnerabilities on your target. Review the latest scan.',
+      };
+    }
+    if (alert.type === 'system') {
+      return {
+        title: 'System notification',
+        message: alert.message || 'Important information regarding your account.',
+      };
+    }
+    return { title: alert.title, message: alert.message };
+  };
+
   if (activeSection === 'support') {
     return (
       <DashboardLayout>
         <div className="space-y-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-slate-900">Support technique</h1>
+              <h1 className="text-3xl font-bold text-slate-900">
+                {localize('Support technique', 'Technical support')}
+              </h1>
               <p className="text-slate-600 mt-1">
-                Créez et suivez vos demandes d'assistance auprès de l'équipe Cyber Scan.
+                {localize(
+                  "Créez et suivez vos demandes d'assistance auprès de l'équipe Cyber Scan.",
+                  'Create and track your support tickets with the CyberScan team.'
+                )}
               </p>
             </div>
             <button
               className="text-sm text-blue-600 underline"
               onClick={() => router.push('/dashboard')}
             >
-              Retour au tableau de bord
+              {localize('Retour au tableau de bord', 'Back to dashboard')}
             </button>
           </div>
 
@@ -339,7 +460,7 @@ export default function DashboardPage() {
             <Card className="border-red-200 bg-red-50 text-red-700">
               <CardHeader className="flex flex-row items-center gap-2">
                 <AlertCircle className="h-5 w-5" />
-                <CardTitle>Erreur</CardTitle>
+                <CardTitle>{localize('Erreur', 'Error')}</CardTitle>
               </CardHeader>
               <CardContent className="text-sm">{loadError}</CardContent>
             </Card>
@@ -350,10 +471,14 @@ export default function DashboardPage() {
           {loading && (
             <Card>
               <CardHeader>
-                <CardTitle>Chargement…</CardTitle>
-                <CardDescription>Récupération de vos tickets.</CardDescription>
+                <CardTitle>{localize('Chargement…', 'Loading...')}</CardTitle>
+                <CardDescription>
+                  {localize('Récupération de vos tickets.', 'Fetching your tickets.')}
+                </CardDescription>
               </CardHeader>
-              <CardContent className="text-sm text-slate-500">Merci de patienter…</CardContent>
+              <CardContent className="text-sm text-slate-500">
+                {localize('Merci de patienter…', 'Please wait...')}
+              </CardContent>
             </Card>
           )}
         </div>
@@ -365,7 +490,7 @@ export default function DashboardPage() {
     return (
       <DashboardLayout>
         <div className="text-center py-12">
-          <p className="text-slate-600">Chargement des données...</p>
+          <p className="text-slate-600">{localize('Chargement des données...', 'Loading data...')}</p>
         </div>
       </DashboardLayout>
     );
@@ -375,15 +500,19 @@ export default function DashboardPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Tableau de bord</h1>
-          <p className="text-slate-600 mt-1">Bienvenue sur votre tableau de bord CyberScan</p>
+          <h1 className="text-3xl font-bold text-slate-900">
+            {localize('Tableau de bord', 'Dashboard')}
+          </h1>
+          <p className="text-slate-600 mt-1">
+            {localize('Bienvenue sur votre tableau de bord CyberScan', 'Welcome to your CyberScan dashboard')}
+          </p>
         </div>
 
         {loadError && (
           <Card className="border-red-200 bg-red-50 text-red-700">
             <CardHeader className="flex flex-row items-center gap-2">
               <AlertCircle className="h-5 w-5" />
-              <CardTitle>Erreur</CardTitle>
+              <CardTitle>{localize('Erreur', 'Error')}</CardTitle>
             </CardHeader>
             <CardContent className="text-sm">{loadError}</CardContent>
           </Card>
@@ -392,8 +521,10 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle>Type d&apos;abonnement</CardTitle>
-              <CardDescription>Fonctionnalités disponibles pour votre compte</CardDescription>
+              <CardTitle>{localize("Type d'abonnement", 'Plan type')}</CardTitle>
+              <CardDescription>
+                {localize('Fonctionnalités disponibles pour votre compte', 'Features available on your account')}
+              </CardDescription>
             </div>
             <Badge variant="secondary" className="uppercase">
               {planLabel}
@@ -401,15 +532,23 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {planLoading ? (
-              <p className="text-sm text-slate-600">Récupération de vos informations d&apos;abonnement…</p>
+              <p className="text-sm text-slate-600">
+                {localize("Récupération de vos informations d'abonnement…", 'Fetching your subscription details...')}
+              </p>
             ) : isAdminDisplay ? (
               <p className="text-sm text-slate-600">
-                Vous êtes administrateur et disposez d&apos;un accès complet à toutes les fonctionnalités.
+                {localize(
+                  "Vous êtes administrateur et disposez d'un accès complet à toutes les fonctionnalités.",
+                  'You are an administrator and have full access to every feature.'
+                )}
               </p>
             ) : (
               <div className="space-y-3">
                 <p className="text-sm text-slate-600">
-                  Plan actuel : <span className="font-semibold capitalize">{effectivePlan}</span>
+                  {localize('Plan actuel :', 'Current plan:')}{' '}
+                  <span className="font-semibold capitalize">
+                    {planNames[effectivePlan as keyof typeof planNames] ?? effectivePlan}
+                  </span>
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {subscriptionBadges.map((feature) => (
@@ -427,7 +566,7 @@ export default function DashboardPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                Résumé des scans
+                {localize('Résumé des scans', 'Scan summary')}
               </h2>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -435,7 +574,9 @@ export default function DashboardPage() {
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-slate-500">Crédits restants</p>
+                      <p className="text-sm font-medium text-slate-500">
+                        {localize('Crédits restants', 'Remaining credits')}
+                      </p>
                       <p className="mt-1 text-xs text-slate-400">{creditDetails}</p>
                     </div>
                     <div className={`${circleClass} border-blue-300 text-blue-600`}>
@@ -444,7 +585,12 @@ export default function DashboardPage() {
                   </div>
                   <div className="mt-4 flex items-center text-xs text-slate-500">
                     <CreditCard className="mr-2 h-4 w-4 text-blue-500" />
-                    <span>{usedCredits} crédits utilisés</span>
+                    <span>
+                      {localize(
+                        `${usedCredits} crédits utilisés`,
+                        `${usedCredits} credits used`
+                      )}
+                    </span>
                   </div>
                 </CardContent>
               </Card>
@@ -453,8 +599,12 @@ export default function DashboardPage() {
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-slate-500">Scans en cours</p>
-                      <p className="mt-1 text-xs text-slate-400">En attente ou en progression</p>
+                      <p className="text-sm font-medium text-slate-500">
+                        {localize('Scans en cours', 'Ongoing scans')}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {localize('En attente ou en progression', 'Pending or in progress')}
+                      </p>
                     </div>
                     <div className={`${circleClass} border-amber-300 text-amber-600`}>
                       <span>{activeScans}</span>
@@ -462,7 +612,12 @@ export default function DashboardPage() {
                   </div>
                   <div className="mt-4 flex items-center text-xs text-slate-500">
                     <Activity className="mr-2 h-4 w-4 text-amber-500" />
-                    <span>{scans.length} scans suivis</span>
+                    <span>
+                      {localize(
+                        `${scans.length} scans suivis`,
+                        `${scans.length} scans tracked`
+                      )}
+                    </span>
                   </div>
                 </CardContent>
               </Card>
@@ -471,8 +626,12 @@ export default function DashboardPage() {
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-slate-500">Alertes</p>
-                      <p className="mt-1 text-xs text-slate-400">Notifications non lues</p>
+                      <p className="text-sm font-medium text-slate-500">
+                        {localize('Alertes', 'Alerts')}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {localize('Notifications non lues', 'Unread notifications')}
+                      </p>
                     </div>
                     <div className={`${circleClass} border-red-300 text-red-600`}>
                       <span>{unreadAlerts}</span>
@@ -480,7 +639,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="mt-4 flex items-center text-xs text-slate-500">
                     <AlertTriangle className="mr-2 h-4 w-4 text-red-500" />
-                    <span>Surveillez vos alertes critiques</span>
+                    <span>{localize('Surveillez vos alertes critiques', 'Keep an eye on critical alerts')}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -489,8 +648,12 @@ export default function DashboardPage() {
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-slate-500">Total scans</p>
-                      <p className="mt-1 text-xs text-slate-400">Dernières exécutions enregistrées</p>
+                      <p className="text-sm font-medium text-slate-500">
+                        {localize('Total scans', 'Total scans')}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {localize('Dernières exécutions enregistrées', 'Latest recorded runs')}
+                      </p>
                     </div>
                     <div className={`${circleClass} border-emerald-300 text-emerald-600`}>
                       <span>{scans.length}</span>
@@ -498,7 +661,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="mt-4 flex items-center text-xs text-slate-500">
                     <TrendingUp className="mr-2 h-4 w-4 text-emerald-500" />
-                    <span>Vue sur les 8 derniers scans</span>
+                    <span>{localize('Vue sur les 8 derniers scans', 'View over the last 8 scans')}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -509,13 +672,20 @@ export default function DashboardPage() {
             <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-rose-500" />
-                <CardTitle>Vulnerability summary</CardTitle>
+                <CardTitle>
+                  {localize('Synthèse des vulnérabilités', 'Vulnerability summary')}
+                </CardTitle>
               </div>
-              <CardDescription>Évolution sur les {DAYS_RANGE} derniers jours</CardDescription>
+              <CardDescription>
+                {localize(
+                  `Évolution sur les ${DAYS_RANGE} derniers jours`,
+                  `Trend over the last ${DAYS_RANGE} days`
+                )}
+              </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-1 flex-col">
               <ChartContainer
-                config={vulnerabilityChartConfig}
+                config={chartConfig}
                 className="h-full min-h-[180px]"
               >
                 <LineChart data={vulnerabilityTrend} margin={{ left: 12, right: 12, top: 8, bottom: 8 }}>
@@ -531,7 +701,12 @@ export default function DashboardPage() {
                 </LineChart>
               </ChartContainer>
               {!hasVulnerabilityData && (
-                <p className="mt-4 text-sm text-slate-600">Aucune donnée de vulnérabilité disponible pour cette période.</p>
+                <p className="mt-4 text-sm text-slate-600">
+                  {localize(
+                    'Aucune donnée de vulnérabilité disponible pour cette période.',
+                    'No vulnerability data available for this period.'
+                  )}
+                </p>
               )}
             </CardContent>
           </Card>
@@ -540,22 +715,26 @@ export default function DashboardPage() {
         <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
           <Card className="overflow-hidden">
             <CardHeader>
-              <CardTitle>Historique des scans</CardTitle>
-              <CardDescription>URL, CMS, mode, niveau de risque, date et statut</CardDescription>
+              <CardTitle>{localize('Historique des scans', 'Scan history')}</CardTitle>
+              <CardDescription>
+                {localize('URL, CMS, mode, niveau de risque, date et statut', 'URL, CMS, mode, risk level, date and status')}
+              </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               {scans.length === 0 ? (
-                <div className="py-8 text-center text-sm text-slate-600">Aucun scan disponible</div>
+                <div className="py-8 text-center text-sm text-slate-600">
+                  {localize('Aucun scan disponible', 'No scans available')}
+                </div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>URL du site</TableHead>
+                      <TableHead>{localize('URL du site', 'Site URL')}</TableHead>
                       <TableHead>CMS</TableHead>
-                      <TableHead>Mode</TableHead>
-                      <TableHead>Risque</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Statut</TableHead>
+                      <TableHead>{localize('Mode', 'Mode')}</TableHead>
+                      <TableHead>{localize('Risque', 'Risk')}</TableHead>
+                      <TableHead>{localize('Date', 'Date')}</TableHead>
+                      <TableHead className="text-right">{localize('Statut', 'Status')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -572,9 +751,11 @@ export default function DashboardPage() {
                             )}
                           </TableCell>
                           <TableCell>{cmsDisplay}</TableCell>
-                          <TableCell className="capitalize">{scan.scan_type}</TableCell>
+                          <TableCell className="capitalize">
+                            {scanModeLabels[scan.scan_type]}
+                          </TableCell>
                           <TableCell>{getRiskBadge(scan.risk_level)}</TableCell>
-                          <TableCell>{new Date(scan.created_at).toLocaleString('fr-FR')}</TableCell>
+                          <TableCell>{new Date(scan.created_at).toLocaleString(locale)}</TableCell>
                           <TableCell className="text-right">{getStatusBadge(scan.status)}</TableCell>
                         </TableRow>
                       );
@@ -587,29 +768,36 @@ export default function DashboardPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Alertes récentes</CardTitle>
-              <CardDescription>Vos 5 dernières notifications</CardDescription>
+              <CardTitle>{localize('Alertes récentes', 'Recent alerts')}</CardTitle>
+              <CardDescription>
+                {localize('Vos 5 dernières notifications', 'Your latest 5 notifications')}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {alerts.length === 0 ? (
-                <p className="text-sm text-slate-600 text-center">Aucune alerte non lue</p>
+                <p className="text-sm text-slate-600 text-center">
+                  {localize('Aucune alerte non lue', 'No unread alerts')}
+                </p>
               ) : (
-                alerts.map((alert) => (
-                  <div key={alert.id} className="rounded-lg border border-slate-200 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{alert.title}</p>
-                        <p className="mt-1 text-xs text-slate-500">{alert.message}</p>
+                alerts.map((alert) => {
+                  const translated = translateAlertContent(alert);
+                  return (
+                    <div key={alert.id} className="rounded-lg border border-slate-200 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{translated.title}</p>
+                          <p className="mt-1 text-xs text-slate-500">{translated.message}</p>
+                        </div>
+                        <span className={`text-xs font-medium uppercase ${severityStyles[alert.severity]}`}>
+                          {alertSeverityLabels[alert.severity]}
+                        </span>
                       </div>
-                      <span className={`text-xs font-medium uppercase ${severityStyles[alert.severity]}`}>
-                        {alert.severity.toUpperCase()}
-                      </span>
+                      <p className="mt-2 text-[11px] text-slate-400">
+                        {new Date(alert.created_at).toLocaleString(locale)}
+                      </p>
                     </div>
-                    <p className="mt-2 text-[11px] text-slate-400">
-                      {new Date(alert.created_at).toLocaleString('fr-FR')}
-                    </p>
-                  </div>
-                ))
+                  );
+                })
               )}
             </CardContent>
           </Card>

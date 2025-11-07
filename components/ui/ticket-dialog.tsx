@@ -7,11 +7,14 @@ import { Input } from './input';
 import { Textarea } from './textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
 import { PlusCircle } from 'lucide-react';
 
 export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void }) {
   const { user } = useAuth();
+  const { choose } = useLanguage();
+  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -58,78 +61,88 @@ export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void 
       <DialogTrigger asChild>
         <Button variant="outline" className="w-full">
           <PlusCircle className="mr-2 h-4 w-4" />
-          Nouveau ticket
+          {localize('Nouveau ticket', 'New ticket')}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Créer un nouveau ticket</DialogTitle>
+          <DialogTitle>{localize('Créer un nouveau ticket', 'Create a new ticket')}</DialogTitle>
           <DialogDescription>
-            Décrivez votre problème ou votre demande d&apos;assistance
+            {localize('Décrivez votre problème ou votre demande d’assistance', 'Describe your issue or request for assistance')}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <label htmlFor="title" className="text-sm font-medium">Titre</label>
+            <label htmlFor="title" className="text-sm font-medium">
+              {localize('Titre', 'Title')}
+            </label>
             <Input
               id="title"
               value={formData.title}
               onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-              placeholder="Titre du ticket"
+              placeholder={localize('Titre du ticket', 'Ticket title')}
               required
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="description" className="text-sm font-medium">Description</label>
+            <label htmlFor="description" className="text-sm font-medium">
+              {localize('Description', 'Description')}
+            </label>
             <Textarea
               id="description"
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Décrivez votre problème en détail"
+              placeholder={localize('Décrivez votre problème en détail', 'Describe your issue in detail')}
               required
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="email" className="text-sm font-medium">Email de contact</label>
+            <label htmlFor="email" className="text-sm font-medium">
+              {localize('Email de contact', 'Contact email')}
+            </label>
             <Input
               id="email"
               type="email"
               value={formData.email}
               onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-              placeholder="contact@exemple.com"
+              placeholder={localize('contact@exemple.com', 'contact@example.com')}
               required
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="phone" className="text-sm font-medium">Numéro de téléphone</label>
+            <label htmlFor="phone" className="text-sm font-medium">
+              {localize('Numéro de téléphone', 'Phone number')}
+            </label>
             <Input
               id="phone"
               type="tel"
               value={formData.phone}
               onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-              placeholder="+33 6 12 34 56 78"
+              placeholder={localize('+33 6 12 34 56 78', '+1 555 555 5555')}
               required
             />
           </div>
           <div className="space-y-2">
-            <label htmlFor="priority" className="text-sm font-medium">Priorité</label>
+            <label htmlFor="priority" className="text-sm font-medium">
+              {localize('Priorité', 'Priority')}
+            </label>
             <Select
               value={formData.priority}
               onValueChange={(value) => setFormData(prev => ({ ...prev, priority: value }))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Sélectionnez une priorité" />
+                <SelectValue placeholder={localize('Sélectionnez une priorité', 'Select a priority')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="low">Basse</SelectItem>
-                <SelectItem value="medium">Moyenne</SelectItem>
-                <SelectItem value="high">Haute</SelectItem>
+                <SelectItem value="low">{localize('Basse', 'Low')}</SelectItem>
+                <SelectItem value="medium">{localize('Moyenne', 'Medium')}</SelectItem>
+                <SelectItem value="high">{localize('Haute', 'High')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <DialogFooter>
             <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Création...' : 'Créer le ticket'}
+              {isLoading ? localize('Création...', 'Creating...') : localize('Créer le ticket', 'Create ticket')}
             </Button>
           </DialogFooter>
         </form>

@@ -4,6 +4,7 @@ import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useSubscriptionPlan } from '@/hooks/use-subscription-plan';
+import { useLanguage } from '@/contexts/LanguageContext';
 import {
   Card,
   CardContent,
@@ -41,6 +42,8 @@ type HistoryEntry = {
 
 const STORAGE_KEY = 'cyberscan-detection-history';
 const MAX_HISTORY_ITEMS = 50;
+const MAX_URLS = 10;
+const UNKNOWN_CMS_FALLBACK = 'unknown';
 
 export default function DashboardDetectionPage() {
   const [input, setInput] = useState('');
@@ -49,22 +52,12 @@ export default function DashboardDetectionPage() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const { plan, loading: planLoading } = useSubscriptionPlan();
+  const { t, language } = useLanguage();
+  const locale = language === 'fr' ? 'fr-FR' : 'en-US';
   const planLabel = useMemo(() => {
-    switch (plan) {
-      case 'free':
-        return 'Gratuit';
-      case 'basic':
-        return 'Basic';
-      case 'pro':
-        return 'Pro';
-      case 'enterprise':
-        return 'Enterprise';
-      case 'admin':
-        return 'Admin';
-      default:
-        return 'Indéfini';
-    }
-  }, [plan]);
+    const key = plan ? `plans.${plan}` : 'plans.unknown';
+    return t(key);
+  }, [plan, t]);
 
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -75,18 +68,18 @@ export default function DashboardDetectionPage() {
       const urls = normalizeUrls(text);
 
       if (urls.length === 0) {
-        setError("Le fichier ne contient pas d'URL valide.");
+        setError(t('detection.fileErrors.noUrl'));
         setResults(null);
         setInput('');
-      } else if (urls.length > 10) {
-        setError('Maximum 10 URLs autorisées. Les 10 premières ont été conservées.');
-        setInput(urls.slice(0, 10).join('\n'));
+      } else if (urls.length > MAX_URLS) {
+        setError(t('detection.fileErrors.tooMany', undefined, { count: MAX_URLS }));
+        setInput(urls.slice(0, MAX_URLS).join('\n'));
       } else {
         setError(null);
         setInput(urls.join('\n'));
       }
     } catch {
-      setError('Impossible de lire le fichier sélectionné.');
+      setError(t('detection.fileErrors.read'));
     } finally {
       event.target.value = '';
     }
@@ -148,12 +141,12 @@ export default function DashboardDetectionPage() {
 
     const urls = normalizeUrls(input);
     if (urls.length === 0) {
-      setError('Veuillez saisir au moins une URL.');
+      setError(t('detection.manualErrors.noUrl'));
       return;
     }
 
-    if (urls.length > 10) {
-      setError('Maximum 10 URLs autorisées.');
+    if (urls.length > MAX_URLS) {
+      setError(t('detection.manualErrors.tooMany', undefined, { count: MAX_URLS }));
       return;
     }
 
@@ -167,7 +160,7 @@ export default function DashboardDetectionPage() {
 
       if (!res.ok) {
         const txt = await res.text();
-        throw new Error(txt || `Erreur ${res.status}`);
+        throw new Error(txt || `${t('common.errorPrefix')} ${res.status}`);
       }
 
       const data = await res.json();
@@ -183,7 +176,7 @@ export default function DashboardDetectionPage() {
             id: `${timestamp + index}-${r.url}`,
             url: r.url,
             siteName: extractSiteName(r.url),
-            cms: r.cms || 'Inconnu',
+            cms: r.cms || UNKNOWN_CMS_FALLBACK,
             createdAt,
           } satisfies HistoryEntry;
         });
@@ -211,7 +204,7 @@ export default function DashboardDetectionPage() {
   };
 
   const formatDateTime = (value: string) =>
-    new Date(value).toLocaleString('fr-FR', {
+    new Date(value).toLocaleString(locale, {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -233,13 +226,16 @@ export default function DashboardDetectionPage() {
           : 'bg-red-100 text-red-700 border border-red-200'
       }
     >
-      {status === 'success' ? 'Succès' : 'Échec'}
+      {status === 'success' ? t('detection.status.success') : t('detection.status.error')}
     </Badge>
   );
 
   const renderCmsBadge = (cms: string) => {
-    const normalized = cms ? cms.toLowerCase() : 'inconnu';
-    const label = normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    const normalized = cms ? cms.toLowerCase() : UNKNOWN_CMS_FALLBACK;
+    const isUnknown = normalized === 'inconnu' || normalized === 'unknown';
+    const label = isUnknown
+      ? t('detection.unknownCms')
+      : normalized.charAt(0).toUpperCase() + normalized.slice(1);
     return (
       <Badge className="bg-blue-100 text-blue-700 border border-blue-200">
         {label}
@@ -251,7 +247,7 @@ export default function DashboardDetectionPage() {
     return (
       <DashboardLayout>
         <div className="p-6 max-w-3xl">
-          <p className="text-slate-600">Chargement de vos informations d&apos;abonnement...</p>
+          <p className="text-slate-600">{t('detection.subscriptionLoading')}</p>
         </div>
       </DashboardLayout>
     );
@@ -264,16 +260,13 @@ export default function DashboardDetectionPage() {
     return (
       <DashboardLayout>
         <div className="p-6 max-w-3xl space-y-4">
-          <h1 className="text-2xl font-bold">Détection indisponible</h1>
-          <p className="text-slate-600">
-            La détection de CMS est disponible à partir du plan Basic. Passez à un plan supérieur
-            pour profiter de cette fonctionnalité avancée.
-          </p>
+          <h1 className="text-2xl font-bold">{t('detection.accessDeniedTitle')}</h1>
+          <p className="text-slate-600">{t('detection.accessDeniedDescription')}</p>
           <Link
             href="/dashboard/subscription"
             className="inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            Voir les abonnements
+            {t('detection.viewPlans')}
           </Link>
         </div>
       </DashboardLayout>
@@ -283,28 +276,22 @@ export default function DashboardDetectionPage() {
   const content = (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900">Détection de CMS</h1>
-        <p className="mt-2 text-slate-600">
-          Identifiez rapidement les technologies utilisées par vos cibles. Analysez jusqu&apos;à 10 URLs à la fois
-          ou importez un fichier pour accélérer vos investigations.
-        </p>
+        <h1 className="text-3xl font-bold text-slate-900">{t('detection.title')}</h1>
+        <p className="mt-2 text-slate-600">{t('detection.description')}</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Nouvelle détection</CardTitle>
-            <CardDescription>
-              Collez vos URLs (une par ligne) ou importez un fichier pour lancer l&apos;analyse. Nous normalisons
-              automatiquement les liens.
-            </CardDescription>
+            <CardTitle>{t('detection.formTitle')}</CardTitle>
+            <CardDescription>{t('detection.formDescription')}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-5">
               <Textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="https://example.com&#10;https://exemple.fr"
+                placeholder={t('detection.placeholder')}
                 className="min-h-[180px]"
               />
 
@@ -318,21 +305,19 @@ export default function DashboardDetectionPage() {
                   />
                   <span className="inline-flex h-10 items-center gap-2 rounded-md border border-dashed border-slate-300 px-4 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-700">
                     <UploadCloud className="h-4 w-4" />
-                    Importer une liste (.txt, .csv)
+                    {t('detection.importLabel')}
                   </span>
                 </label>
                 <Badge variant="outline" className="border-slate-300 bg-slate-100 text-slate-600">
-                  Limite : 10 URLs
+                  {t('detection.limitLabel', undefined, { count: MAX_URLS })}
                 </Badge>
-                <span className="text-xs text-slate-500">
-                  Les URLs sans protocole seront automatiquement converties en https://
-                </span>
+                <span className="text-xs text-slate-500">{t('detection.protocolHint')}</span>
               </div>
 
               <div className="flex flex-wrap gap-3">
                 <Button type="submit" disabled={isDetecting}>
                   {isDetecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {isDetecting ? 'Analyse en cours...' : 'Détecter le CMS'}
+                  {isDetecting ? t('detection.loading') : t('detection.submit')}
                 </Button>
                 <Button
                   type="button"
@@ -343,7 +328,7 @@ export default function DashboardDetectionPage() {
                     setError(null);
                   }}
                 >
-                  Réinitialiser
+                  {t('detection.reset')}
                 </Button>
               </div>
             </form>
@@ -354,51 +339,51 @@ export default function DashboardDetectionPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Globe className="h-5 w-5" />
-              Vue d&apos;ensemble
+              {t('detection.overviewTitle')}
             </CardTitle>
             <CardDescription className="text-slate-200/80">
-              Surveillez votre plan et l&apos;activité récente de vos analyses.
+              {t('detection.overviewDescription')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div>
-              <p className="text-xs uppercase text-slate-300 tracking-wide">Plan actuel</p>
+              <p className="text-xs uppercase text-slate-300 tracking-wide">{t('detection.currentPlan')}</p>
               <p className="mt-1 flex items-center gap-2 text-lg font-semibold">
                 {planLabel}
                 <Badge variant="secondary" className="border border-white/20 bg-white/10 text-white">
-                  Détection incluse
+                  {t('detection.detectionIncluded')}
                 </Badge>
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                <p className="text-xs uppercase text-slate-300 tracking-wide">Succès</p>
+                <p className="text-xs uppercase text-slate-300 tracking-wide">{t('detection.successes')}</p>
                 <p className="mt-2 text-2xl font-semibold">{successfulCount}</p>
               </div>
               <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-                <p className="text-xs uppercase text-slate-300 tracking-wide">Échecs</p>
+                <p className="text-xs uppercase text-slate-300 tracking-wide">{t('detection.failures')}</p>
                 <p className="mt-2 text-2xl font-semibold">{failureCount}</p>
               </div>
             </div>
 
             <div className="rounded-lg border border-white/10 bg-white/5 p-3">
-              <p className="text-xs uppercase text-slate-300 tracking-wide">Dernier site analysé</p>
+              <p className="text-xs uppercase text-slate-300 tracking-wide">{t('detection.lastAnalyzed')}</p>
               {latestHistory ? (
                 <div className="mt-2 space-y-1">
                   <p className="text-sm font-medium">{latestHistory.siteName}</p>
                   <p className="text-xs text-slate-300">{formatDateTime(latestHistory.createdAt)}</p>
                 </div>
               ) : (
-                <p className="mt-2 text-sm text-slate-200/80">Aucune analyse enregistrée.</p>
+                <p className="mt-2 text-sm text-slate-200/80">{t('common.historyEmpty')}</p>
               )}
             </div>
 
             <div className="flex items-center gap-2 text-sm text-slate-200/80">
               <HistoryIcon className="h-4 w-4" />
               {totalDetections > 0
-                ? `${totalDetections} détections sauvegardées`
-                : "L'historique se remplira après vos analyses."}
+                ? t('detection.savedDetections', undefined, { count: totalDetections })
+                : t('common.historySoon')}
             </div>
           </CardContent>
         </Card>
@@ -407,7 +392,9 @@ export default function DashboardDetectionPage() {
       {error && (
         <div className="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <AlertCircle className="mt-0.5 h-4 w-4" />
-          <span>{error}</span>
+          <span>
+            <span className="font-semibold">{t('detection.errorBanner')}:</span> {error}
+          </span>
         </div>
       )}
 
@@ -415,12 +402,12 @@ export default function DashboardDetectionPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-            Résultats de la détection
+            {t('detection.resultsTitle')}
           </CardTitle>
           <CardDescription>
             {hasResults
-              ? 'Analyse des URLs soumises et CMS détectés.'
-              : 'Soumettez une analyse pour afficher les résultats ici.'}
+              ? t('detection.resultsDescription')
+              : t('detection.resultsPlaceholder')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -435,28 +422,30 @@ export default function DashboardDetectionPage() {
                     <p className="break-all font-medium text-slate-900">{result.url}</p>
                     {renderStatusBadge(result.status)}
                   </div>
-                  {result.status === 'success' ? (
-                    <div className="space-y-2 text-sm text-slate-600">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold uppercase text-slate-400">CMS</span>
-                        {renderCmsBadge(result.cms || 'Inconnu')}
+                    {result.status === 'success' ? (
+                      <div className="space-y-2 text-sm text-slate-600">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold uppercase text-slate-400">CMS</span>
+                          {renderCmsBadge(result.cms || UNKNOWN_CMS_FALLBACK)}
+                        </div>
+                        <div>
+                          <span className="text-xs font-semibold uppercase text-slate-400">
+                            {t('detection.confidence')}
+                          </span>
+                          <p className="font-medium text-slate-900">{formatConfidence(result.confiance)}</p>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-xs font-semibold uppercase text-slate-400">Confiance</span>
-                        <p className="font-medium text-slate-900">{formatConfidence(result.confiance)}</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-red-600">
-                      Erreur : {result.error || 'Impossible de détecter le CMS.'}
-                    </p>
-                  )}
-                </div>
-              ))}
+                    ) : (
+                      <p className="text-sm text-red-600">
+                        {t('common.errorPrefix')}: {result.error || t('detection.errorFallback')}
+                      </p>
+                    )}
+                  </div>
+                ))}
             </div>
           ) : (
             <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-              Lancez une détection pour visualiser les résultats.
+              {t('common.resultsPlaceholder')}
             </div>
           )}
         </CardContent>
@@ -466,25 +455,23 @@ export default function DashboardDetectionPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <HistoryIcon className="h-5 w-5 text-slate-600" />
-            Historique des détections
+            {t('detection.historyTitle')}
           </CardTitle>
-          <CardDescription>
-            Suivez vos précédentes analyses et retrouvez rapidement les CMS détectés.
-          </CardDescription>
+          <CardDescription>{t('detection.historyDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           {history.length === 0 ? (
             <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-              L'historique se remplira automatiquement après vos analyses.
+              {t('detection.historyNotice')}
             </div>
           ) : (
             <div className="overflow-hidden rounded-lg border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-100 text-left text-xs font-semibold uppercase text-slate-500">
                   <tr>
-                    <th className="px-4 py-3">Site</th>
-                    <th className="px-4 py-3">Date</th>
-                    <th className="px-4 py-3">CMS</th>
+                    <th className="px-4 py-3">{t('detection.historyTable.site')}</th>
+                    <th className="px-4 py-3">{t('detection.historyTable.date')}</th>
+                    <th className="px-4 py-3">{t('detection.historyTable.cms')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">

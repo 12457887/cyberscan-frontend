@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -11,6 +12,8 @@ import { Shield, Loader2 } from 'lucide-react';
 
 export default function ForgotPasswordPage() {
   const { sendPasswordReset } = useAuth();
+  const { choose } = useLanguage();
+  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -25,9 +28,12 @@ export default function ForgotPasswordPage() {
     const { error, message: responseMessage } = await sendPasswordReset(email);
     setStatus(error ? 'error' : 'success');
     if (error) {
-      setMessage(responseMessage || "Impossible d'envoyer le lien de réinitialisation.");
+      setMessage(responseMessage || localize("Impossible d'envoyer le lien de réinitialisation.", 'Unable to send the reset link.'));
     } else {
-      setMessage(responseMessage || "Un email de réinitialisation vient d'être envoyé. Consultez votre boîte de réception.");
+      setMessage(
+        responseMessage ||
+          localize("Un email de réinitialisation vient d'être envoyé. Consultez votre boîte de réception.", 'A reset email has been sent. Check your inbox.')
+      );
     }
     setLoading(false);
   };
@@ -40,8 +46,10 @@ export default function ForgotPasswordPage() {
             <Shield className="w-7 h-7 text-white" />
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold">Mot de passe oublié</CardTitle>
-            <CardDescription>Recevez un lien de réinitialisation par email</CardDescription>
+            <CardTitle className="text-2xl font-bold">{localize('Mot de passe oublié', 'Forgot password')}</CardTitle>
+            <CardDescription>
+              {localize('Recevez un lien de réinitialisation par email', 'Receive a reset link via email')}
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent>
@@ -74,17 +82,17 @@ export default function ForgotPasswordPage() {
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Envoi en cours...
+                  {localize('Envoi en cours...', 'Sending...')}
                 </>
               ) : (
-                'Envoyer le lien'
+                localize('Envoyer le lien', 'Send link')
               )}
             </Button>
           </form>
 
           <div className="mt-6 text-center text-sm">
             <Link href="/login" className="text-blue-600 hover:underline font-medium">
-              Retour à la connexion
+              {localize('Retour à la connexion', 'Back to sign in')}
             </Link>
           </div>
         </CardContent>

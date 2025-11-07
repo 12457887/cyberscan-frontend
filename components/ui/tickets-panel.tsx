@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge } from './badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card';
 import { TicketDialog } from './ticket-dialog';
 import { Ticket } from '@/lib/supabase';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface TicketsPanelProps {
   tickets: Ticket[];
@@ -13,6 +14,25 @@ interface TicketsPanelProps {
 }
 
 export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: TicketsPanelProps) {
+  const { choose } = useLanguage();
+  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
+  const locale = choose({ fr: 'fr-FR', en: 'en-US' });
+  const statusLabels = useMemo(
+    () =>
+      choose({
+        fr: { open: 'Ouvert', in_progress: 'En cours', resolved: 'Résolu', closed: 'Fermé' },
+        en: { open: 'Open', in_progress: 'In progress', resolved: 'Resolved', closed: 'Closed' },
+      }),
+    [choose]
+  );
+  const priorityLabels = useMemo(
+    () =>
+      choose({
+        fr: { high: 'Haute', medium: 'Moyenne', low: 'Basse' },
+        en: { high: 'High', medium: 'Medium', low: 'Low' },
+      }),
+    [choose]
+  );
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
 
   const getStatusBadgeStyle = (status: string) => {
@@ -31,24 +51,24 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'open':
-        return 'Ouvert';
+        return statusLabels.open;
       case 'in_progress':
-        return 'En cours';
+        return statusLabels.in_progress;
       case 'resolved':
-        return 'Résolu';
+        return statusLabels.resolved;
       default:
-        return 'Fermé';
+        return statusLabels.closed;
     }
   };
 
   const getPriorityLabel = (priority: string) => {
     switch (priority) {
       case 'high':
-        return 'Haute';
+        return priorityLabels.high;
       case 'medium':
-        return 'Moyenne';
+        return priorityLabels.medium;
       default:
-        return 'Basse';
+        return priorityLabels.low;
     }
   };
 
@@ -64,15 +84,19 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Tickets de support</CardTitle>
+        <CardTitle>{localize('Tickets de support', 'Support tickets')}</CardTitle>
         <CardDescription>
-          {isAdmin ? 'Derniers tickets reçus de vos utilisateurs' : 'Les 5 derniers tickets ouverts'}
+          {isAdmin
+            ? localize('Derniers tickets reçus de vos utilisateurs', 'Latest tickets received from your users')
+            : localize('Les 5 derniers tickets ouverts', 'Your 5 most recent open tickets')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <TicketDialog onTicketCreated={onTicketCreated} />
         {tickets.length === 0 ? (
-          <p className="text-sm text-slate-600 text-center mt-4">Aucun ticket en cours</p>
+          <p className="text-sm text-slate-600 text-center mt-4">
+            {localize('Aucun ticket en cours', 'No tickets in progress')}
+          </p>
         ) : (
           tickets.map((ticket) => {
             const isExpanded = expandedTicketId === ticket.id;
@@ -107,7 +131,7 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
                     onClick={() => toggleTicketDetails(ticket.id)}
                     className="mt-2 text-xs font-medium text-blue-600 hover:underline"
                   >
-                    Voir les détails
+                    {localize('Voir les détails', 'View details')}
                   </button>
                 )}
 
@@ -116,11 +140,11 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
                     <div className="text-sm text-slate-700">{ticket.description}</div>
                     <div className="flex flex-wrap gap-4">
                       <span>
-                        Priorité :{' '}
+                        {localize('Priorité', 'Priority')} :{' '}
                         <strong className="text-slate-900">{getPriorityLabel(ticket.priority)}</strong>
                       </span>
                       <span>
-                        Statut :{' '}
+                        {localize('Statut', 'Status')} :{' '}
                         <strong className="text-slate-900">{getStatusLabel(ticket.status)}</strong>
                       </span>
                     </div>
@@ -137,7 +161,7 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
                     )}
                     {ticket.phone_number && (
                       <p>
-                        Téléphone :{' '}
+                        {localize('Téléphone', 'Phone')} :{' '}
                         <a
                           href={`tel:${ticket.phone_number}`}
                           className="font-medium text-slate-900 hover:underline"
@@ -147,14 +171,15 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
                       </p>
                     )}
                     <p className="text-[11px] text-slate-400">
-                      Créé le {new Date(ticket.created_at).toLocaleString('fr-FR')}
+                      {localize('Créé le', 'Created on')}{' '}
+                      {new Date(ticket.created_at).toLocaleString(locale)}
                     </p>
                   </div>
                 )}
 
                 {!isExpanded && (
                   <p className="mt-2 text-[11px] text-slate-400">
-                    {new Date(ticket.created_at).toLocaleString('fr-FR')}
+                    {new Date(ticket.created_at).toLocaleString(locale)}
                   </p>
                 )}
               </div>

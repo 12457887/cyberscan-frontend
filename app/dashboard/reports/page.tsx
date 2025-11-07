@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +28,25 @@ import {
 
 export default function ReportsPage() {
   const { user } = useAuth();
+  const { choose } = useLanguage();
+  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
+  const locale = choose({ fr: 'fr-FR', en: 'en-US' });
+  const statusLabels = useMemo(
+    () =>
+      choose({
+        fr: { completed: 'Terminé', failed: 'Échoué', in_progress: 'En cours', pending: 'En attente' },
+        en: { completed: 'Completed', failed: 'Failed', in_progress: 'In progress', pending: 'Pending' },
+      }),
+    [choose]
+  );
+  const riskLabels = useMemo(
+    () =>
+      choose({
+        fr: { critical: 'Critique', high: 'Élevé', medium: 'Moyen', low: 'Faible', na: 'N/A' },
+        en: { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', na: 'N/A' },
+      }),
+    [choose]
+  );
   const [scans, setScans] = useState<Scan[]>([]);
   const [vulnerabilities, setVulnerabilities] = useState<{ [key: string]: Vulnerability[] }>({});
   const [loading, setLoading] = useState(true);
@@ -95,21 +115,26 @@ export default function ReportsPage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'completed': return <Badge className="bg-green-600">Terminé</Badge>;
-      case 'failed': return <Badge variant="destructive">Échoué</Badge>;
-      case 'in_progress': return <Badge className="bg-blue-600">En cours</Badge>;
-      case 'pending': return <Badge className="bg-yellow-600 text-black">En attente</Badge>;
-      default: return <Badge variant="secondary">{status}</Badge>;
+      case 'completed':
+        return <Badge className="bg-green-600">{statusLabels.completed}</Badge>;
+      case 'failed':
+        return <Badge variant="destructive">{statusLabels.failed}</Badge>;
+      case 'in_progress':
+        return <Badge className="bg-blue-600">{statusLabels.in_progress}</Badge>;
+      case 'pending':
+        return <Badge className="bg-yellow-600 text-black">{statusLabels.pending}</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
     }
   };
 
 const getRiskBadge = (risk: string | null) => {
   switch (risk) {
-    case 'critical': return <Badge variant="destructive">Critique</Badge>;
-    case 'high': return <Badge className="bg-orange-500">Élevé</Badge>;
-    case 'medium': return <Badge className="bg-yellow-500 text-black">Moyen</Badge>;
-    case 'low': return <Badge className="bg-green-500">Faible</Badge>;
-    default: return <Badge variant="secondary">N/A</Badge>;
+    case 'critical': return <Badge variant="destructive">{riskLabels.critical}</Badge>;
+    case 'high': return <Badge className="bg-orange-500">{riskLabels.high}</Badge>;
+    case 'medium': return <Badge className="bg-yellow-500 text-black">{riskLabels.medium}</Badge>;
+    case 'low': return <Badge className="bg-green-500">{riskLabels.low}</Badge>;
+    default: return <Badge variant="secondary">{riskLabels.na}</Badge>;
   }
 };
 
@@ -117,7 +142,7 @@ type ReportFormat = 'pdf' | 'json' | 'xlsx';
 
 const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') => {
   if (!scan.mongo_report_id) {
-    alert("Rapport non disponible. Lancez un scan d'abord.");
+    alert(localize("Rapport non disponible. Lancez un scan d'abord.", 'Report unavailable. Please run a scan first.'));
     return;
   }
 
@@ -125,7 +150,7 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
     const apiUrl = `/api/generate-report/${scan.mongo_report_id}?report_format=${format}`;
     const response = await fetch(apiUrl);
 
-    if (!response.ok) throw new Error("Erreur lors du téléchargement du rapport");
+    if (!response.ok) throw new Error(localize('Erreur lors du téléchargement du rapport', 'Error while downloading report'));
 
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
@@ -139,8 +164,8 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
   } catch (error: any) {
-    console.error("Erreur lors du téléchargement du rapport :", error);
-    alert("Erreur lors du téléchargement du rapport : " + error.message);
+    console.error('Erreur lors du téléchargement du rapport :', error);
+    alert(localize('Erreur lors du téléchargement du rapport : ', 'Error downloading report: ') + error.message);
   }
 };
 
@@ -194,7 +219,7 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
     return (
       <DashboardLayout>
         <div className="text-center py-12">
-          <p className="text-slate-600">Chargement des rapports...</p>
+          <p className="text-slate-600">{localize('Chargement des rapports...', 'Loading reports...')}</p>
         </div>
       </DashboardLayout>
     );
@@ -205,8 +230,12 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
       <div className="space-y-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900">Mes scans</h1>
-            <p className="text-slate-600 mt-1">Consultez et téléchargez vos rapports de scan</p>
+            <h1 className="text-3xl font-bold text-slate-900">
+              {localize('Mes scans', 'My scans')}
+            </h1>
+            <p className="text-slate-600 mt-1">
+              {localize('Consultez et téléchargez vos rapports de scan', 'Review and download your scan reports')}
+            </p>
           </div>
           {scans.length > 0 && (
             <Button
@@ -214,7 +243,7 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
               className={`justify-between ${hasActiveFilters ? 'border-blue-500 text-blue-600' : ''}`}
               onClick={() => setFiltersOpen((prev) => !prev)}
             >
-              {hasActiveFilters ? 'Filtres actifs' : 'Filtres désactivés'}
+              {hasActiveFilters ? localize('Filtres actifs', 'Filters active') : localize('Filtres désactivés', 'Filters disabled')}
               <Filter className="w-4 h-4 ml-2" />
             </Button>
           )}
@@ -228,52 +257,52 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
                   <Label htmlFor="search">URL</Label>
                   <Input
                     id="search"
-                    placeholder="Rechercher par URL"
+                    placeholder={localize('Rechercher par URL', 'Search by URL')}
                     value={filters.search}
                     onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label>Type de site (CMS)</Label>
+                  <Label>{localize('Type de site (CMS)', 'Site type (CMS)')}</Label>
                   <Select
                     value={filters.cms}
                     onValueChange={(value) => setFilters((prev) => ({ ...prev, cms: value }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Tous les CMS" />
+                      <SelectValue placeholder={localize('Tous les CMS', 'All CMS')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Tous</SelectItem>
+                      <SelectItem value="all">{localize('Tous', 'All')}</SelectItem>
                       <SelectItem value="wordpress">WordPress</SelectItem>
                       <SelectItem value="drupal">Drupal</SelectItem>
                       <SelectItem value="prestashop">PrestaShop</SelectItem>
-                      <SelectItem value="inconnu">Inconnu</SelectItem>
+                      <SelectItem value="inconnu">{localize('Inconnu', 'Unknown')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1">
-                  <Label>Niveau de risque</Label>
+                  <Label>{localize('Niveau de risque', 'Risk level')}</Label>
                   <Select
                     value={filters.risk}
                     onValueChange={(value) => setFilters((prev) => ({ ...prev, risk: value }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Tous les niveaux" />
+                      <SelectValue placeholder={localize('Tous les niveaux', 'All levels')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Tous</SelectItem>
-                      <SelectItem value="critical">Critique</SelectItem>
-                      <SelectItem value="high">Élevé</SelectItem>
-                      <SelectItem value="medium">Moyen</SelectItem>
-                      <SelectItem value="low">Faible</SelectItem>
+                      <SelectItem value="all">{localize('Tous', 'All')}</SelectItem>
+                      <SelectItem value="critical">{riskLabels.critical}</SelectItem>
+                      <SelectItem value="high">{riskLabels.high}</SelectItem>
+                      <SelectItem value="medium">{riskLabels.medium}</SelectItem>
+                      <SelectItem value="low">{riskLabels.low}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label htmlFor="dateFrom">Date (du)</Label>
+                    <Label htmlFor="dateFrom">{localize('Date (du)', 'Date from')}</Label>
                     <Input
                       id="dateFrom"
                       type="date"
@@ -282,7 +311,7 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="dateTo">Date (au)</Label>
+                    <Label htmlFor="dateTo">{localize('Date (au)', 'Date to')}</Label>
                     <Input
                       id="dateTo"
                       type="date"
@@ -299,7 +328,7 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
                     setFilters({ search: '', cms: 'all', risk: 'all', dateFrom: '', dateTo: '' })
                   }
                 >
-                  Réinitialiser
+                  {localize('Réinitialiser', 'Reset')}
                 </Button>
               </div>
             </CardContent>
@@ -309,26 +338,28 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
         {scans.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-slate-500">
-              Aucun scan effectué pour le moment.
+              {localize('Aucun scan effectué pour le moment.', 'No scan has been run yet.')}
             </CardContent>
           </Card>
         ) : filteredScans.length > 0 ? (
           <Card>
             <CardHeader>
-              <CardTitle>Historique complet</CardTitle>
-              <CardDescription>Vision synthétique de vos derniers scans</CardDescription>
+              <CardTitle>{localize('Historique complet', 'Full history')}</CardTitle>
+              <CardDescription>
+                {localize('Vision synthétique de vos derniers scans', 'Summary view of your latest scans')}
+              </CardDescription>
             </CardHeader>
             <CardContent className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>URL</TableHead>
-                    <TableHead>Type de site</TableHead>
-                    <TableHead>Statut</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-center">Vulnérabilités</TableHead>
-                    <TableHead>Niveau de risque</TableHead>
-                    <TableHead>Export</TableHead>
+                    <TableHead>{localize('Type de site', 'Site type')}</TableHead>
+                    <TableHead>{localize('Statut', 'Status')}</TableHead>
+                    <TableHead>{localize('Date', 'Date')}</TableHead>
+                    <TableHead className="text-center">{localize('Vulnérabilités', 'Vulnerabilities')}</TableHead>
+                    <TableHead>{localize('Niveau de risque', 'Risk level')}</TableHead>
+                    <TableHead>{localize('Export', 'Export')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -337,9 +368,9 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
                       <TableCell className="text-sm text-slate-900 truncate max-w-[220px]">
                         {scan.site_url}
                       </TableCell>
-                      <TableCell className="capitalize">{scan.cms_type || 'Inconnu'}</TableCell>
+                      <TableCell className="capitalize">{scan.cms_type || localize('Inconnu', 'Unknown')}</TableCell>
                       <TableCell>{getStatusBadge(scan.status)}</TableCell>
-                      <TableCell>{new Date(scan.created_at).toLocaleString('fr-FR')}</TableCell>
+                      <TableCell>{new Date(scan.created_at).toLocaleString(locale)}</TableCell>
                       <TableCell className="text-center font-semibold">
                         {getVulnerabilityTotal(scan)}
                       </TableCell>
@@ -350,7 +381,7 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
                             <DropdownMenuTrigger asChild>
                               <Button variant="outline" size="sm">
                                 <Download className="w-4 h-4 mr-1" />
-                                Exporter
+                                {localize('Exporter', 'Export')}
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-36">
@@ -366,7 +397,9 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         ) : (
-                          <span className="text-xs text-slate-400">En attente de rapport</span>
+                          <span className="text-xs text-slate-400">
+                            {localize('En attente de rapport', 'Waiting for report')}
+                          </span>
                         )}
                       </TableCell>
                     </TableRow>
@@ -378,7 +411,7 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
         ) : (
           <Card>
             <CardContent className="py-12 text-center text-slate-500">
-              Aucun scan ne correspond aux filtres sélectionnés.
+              {localize('Aucun scan ne correspond aux filtres sélectionnés.', 'No scan matches the selected filters.')}
             </CardContent>
           </Card>
         )}

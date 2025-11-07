@@ -3,11 +3,24 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
-import { Shield, Home, Scan, FileText, CreditCard, User, Bell, LogOut, Menu, X, Settings, Search } from 'lucide-react';
+import { Shield, Home, Scan, FileText, CreditCard, User, Bell, LogOut, Menu, X, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useSubscriptionPlan } from '@/hooks/use-subscription-plan';
+import { Language, useLanguage } from '@/contexts/LanguageContext';
+
+const NAV_ITEMS = [
+  { key: 'nav.dashboard', href: '/dashboard', icon: Home },
+  { key: 'nav.newScan', href: '/dashboard/scan', icon: Scan },
+  { key: 'nav.reports', href: '/dashboard/reports', icon: FileText },
+  { key: 'nav.detection', href: '/dashboard/detection', icon: Shield },
+  { key: 'nav.subscription', href: '/dashboard/subscription', icon: CreditCard },
+  { key: 'nav.profile', href: '/dashboard/profile', icon: User },
+  { key: 'nav.support', href: '/dashboard?section=support', icon: User },
+] as const;
+
+const ADMIN_NAV_ITEMS = [{ key: 'nav.admin', href: '/admin', icon: Settings }] as const;
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, profile, loading, signOut } = useAuth();
@@ -15,20 +28,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { plan } = useSubscriptionPlan();
+  const { t, language, setLanguage } = useLanguage();
   const planLabel = useMemo(() => {
-    switch (plan) {
-      case 'free':
-        return 'Abonnement Gratuit';
-      case 'basic':
-        return 'Abonnement Basic';
-      case 'pro':
-        return 'Abonnement Pro';
-      case 'admin':
-        return 'Abonnement Admin';
-      default:
-        return null;
+    if (!plan) {
+      return null;
     }
-  }, [plan]);
+    return t(`plans.${plan}`, t('plans.unknown'));
+  }, [plan, t]);
 
 
   useEffect(() => {
@@ -42,7 +48,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
           <Shield className="w-12 h-12 text-blue-600 mx-auto mb-4 animate-pulse" />
-          <p className="text-slate-600">Chargement...</p>
+          <p className="text-slate-600">{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -51,21 +57,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!user) {
     return null;
   }
-
-  const navigation = [
-    { name: 'Tableau de bord', href: '/dashboard', icon: Home },
-    { name: 'Nouveau Scan', href: '/dashboard/scan', icon: Scan },
-    { name: 'Mes scans', href: '/dashboard/reports', icon: FileText },
-    { name: 'Détection', href: '/dashboard/detection', icon: Shield },
-  //  { name: 'Analyseur', href: '/dashboard/analyzer', icon: Search },
-    { name: 'Abonnement', href: '/dashboard/subscription', icon: CreditCard },
-    { name: 'Profil', href: '/dashboard/profile', icon: User },
-    { name: 'Support Technique', href: '/dashboard?section=support', icon: User },
-  ];
-
-  const adminNavigation = [
-    { name: 'Administration', href: '/admin', icon: Settings },
-  ];
 
   const effectivePlan = plan ?? (profile?.role === 'admin' ? 'admin' : 'free');
 
@@ -82,7 +73,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return true;
   };
 
-  const filteredNavigation = navigation.filter((item) => shouldDisplayNavItem(item.href));
+  const filteredNavigation = NAV_ITEMS.filter((item) => shouldDisplayNavItem(item.href));
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -92,12 +83,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="flex items-center">
               <div className="flex-shrink-0 flex items-center">
                 <Shield className="w-8 h-8 text-blue-600" />
-                <span className="ml-2 text-xl font-bold text-slate-900">CyberScan</span>
+                <span className="ml-2 text-xl font-bold text-slate-900">{t('common.appName')}</span>
               </div>
             </div>
 
             <div className="hidden md:flex items-center space-x-4">
-              <Button variant="ghost" size="icon" asChild>
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <label htmlFor="language-select" className="text-xs uppercase tracking-wide">
+                  {t('language.label')}
+                </label>
+                <select
+                  id="language-select"
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value as Language)}
+                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="fr">{t('language.short.fr')}</option>
+                  <option value="en">{t('language.short.en')}</option>
+                </select>
+              </div>
+              <Button variant="ghost" size="icon" asChild aria-label={t('common.notifications')}>
                 <Link href="/dashboard/notifications">
                   <Bell className="w-5 h-5" />
                 </Link>
@@ -107,7 +112,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 {planLabel && <span className="text-xs font-medium text-green-600">{planLabel}</span>}
               </div>
               {profile?.role === 'admin' && (
-                <Badge variant="secondary">Admin</Badge>
+                <Badge variant="secondary">{t('common.adminBadge')}</Badge>
               )}
               <Button variant="ghost" size="icon" onClick={signOut}>
                 <LogOut className="w-5 h-5" />
@@ -127,19 +132,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="px-2 pt-2 pb-3 space-y-1">
               {filteredNavigation.map((item) => (
                 <Link
-                  key={item.name}
+                  key={item.href}
                   href={item.href}
                   className="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:bg-slate-100"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  {item.name}
+                  {t(item.key)}
                 </Link>
               ))}
+              <div className="px-3 py-2">
+                <label htmlFor="language-select-mobile" className="text-xs uppercase tracking-wide text-slate-500">
+                  {t('language.label')}
+                </label>
+                <select
+                  id="language-select-mobile"
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value as Language)}
+                  className="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="fr">{t('language.short.fr')}</option>
+                  <option value="en">{t('language.short.en')}</option>
+                </select>
+              </div>
               <button
                 onClick={signOut}
                 className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:bg-slate-100"
               >
-                Se déconnecter
+                {t('nav.logout')}
               </button>
             </div>
           </div>
@@ -153,9 +172,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {filteredNavigation.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
+                const label = t(item.key);
                 return (
                   <Link
-                    key={item.name}
+                    key={item.href}
                     href={item.href}
                     className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
                       isActive
@@ -164,7 +184,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     }`}
                   >
                     <Icon className={`w-5 h-5 mr-3 ${isActive ? 'text-blue-700' : 'text-slate-500'}`} />
-                    {item.name}
+                    {label}
                   </Link>
                 );
               })}
@@ -172,12 +192,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {profile?.role === 'admin' && (
                 <>
                   <div className="border-t border-slate-200 my-4"></div>
-                  {adminNavigation.map((item) => {
+                  {ADMIN_NAV_ITEMS.map((item) => {
                     const Icon = item.icon;
                     const isActive = pathname === item.href;
                     return (
                       <Link
-                        key={item.name}
+                        key={item.href}
                         href={item.href}
                         className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
                           isActive
@@ -186,7 +206,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         }`}
                       >
                         <Icon className={`w-5 h-5 mr-3 ${isActive ? 'text-orange-700' : 'text-slate-500'}`} />
-                        {item.name}
+                        {t(item.key)}
                       </Link>
                     );
                   })}
