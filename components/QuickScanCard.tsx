@@ -181,7 +181,7 @@ export function QuickScanCard() {
 
       const computed = computeRiskFromResult(scanRaw as ScanApiResult);
       const analyzerCms =
-        Array.isArray(analyzerData?.cms) && analyzerData?.cms?.length > 0
+        Array.isArray(analyzerData?.cms) && (analyzerData.cms?.length ?? 0) > 0
           ? formatCmsLabel(analyzerData.cms[0])
           : null;
 
