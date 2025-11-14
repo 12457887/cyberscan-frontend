@@ -35,10 +35,28 @@ export async function POST(req: Request) {
     const csrfCookie = `csrf-token=${csrfToken}`;
     headers['Cookie'] = incomingCookies ? `${csrfCookie}; ${incomingCookies}` : csrfCookie;
 
-    const res = await fetch(`${backendUrl}/stripe/create-checkout`, {
+    let targetPath = '/stripe/create-checkout';
+    let forwardBody = body;
+
+    try {
+      const parsed = body ? JSON.parse(body) : null;
+      if (parsed && parsed.checkoutMode === 'embedded') {
+        targetPath = '/stripe/create-subscription-intent';
+        delete parsed.checkoutMode;
+        forwardBody = JSON.stringify(parsed);
+      } else if (parsed && parsed.action === 'sync-subscription') {
+        targetPath = '/stripe/sync-subscription';
+        delete parsed.action;
+        forwardBody = JSON.stringify(parsed);
+      }
+    } catch (error) {
+      console.warn('Impossible de parser le corps de la requête Stripe:', error);
+    }
+
+    const res = await fetch(`${backendUrl}${targetPath}`, {
       method: 'POST',
       headers,
-      body,
+      body: forwardBody,
     });
 
     const payload = await res.text();

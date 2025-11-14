@@ -10,14 +10,22 @@ type AuthResponse = {
   message?: string;
 };
 
+type CreditsSummary = {
+  total: number;
+  used: number;
+  remaining: number;
+};
+
 type AuthContextType = {
   user: User | null;
   profile: Profile | null;
+  credits: CreditsSummary | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<AuthResponse>;
   signInWithGoogle: () => Promise<AuthResponse>;
-  signUp: (email: string, password: string, fullName: string) => Promise<AuthResponse>;
+  signUp: (email: string, password: string, fullName: string, phoneNumber: string) => Promise<AuthResponse>;
   sendPasswordReset: (email: string) => Promise<AuthResponse>;
+  refreshCredits: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -46,8 +54,35 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [credits, setCredits] = useState<CreditsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+
+  const loadCredits = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('credits')
+        .select('total_credits, used_credits, remaining_credits')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error loading credits:', error);
+        setCredits(null);
+      } else if (data) {
+        setCredits({
+          total: data.total_credits ?? 0,
+          used: data.used_credits ?? 0,
+          remaining: data.remaining_credits ?? 0,
+        });
+      } else {
+        setCredits(null);
+      }
+    } catch (error) {
+      console.error('Error loading credits:', error);
+      setCredits(null);
+    }
+  };
 
   useEffect(() => {
     const syncSession = async (event: string, session: Session | null) => {
@@ -68,6 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (session?.user) {
         loadProfile(session.user.id);
       } else {
+        setCredits(null);
         setLoading(false);
       }
     });
@@ -80,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           loadProfile(session.user.id);
         } else {
           setProfile(null);
+          setCredits(null);
           setLoading(false);
         }
       })();
@@ -110,6 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             id: userId,
             email: session.user.email || '',
             full_name: session.user.user_metadata?.name || 'Administrateur',
+            phone_number: session.user.user_metadata?.phone_number || null,
             role: 'admin',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -122,10 +160,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role: session?.user.app_metadata?.role === 'admin' ? 'admin' : data.role,
         });
       }
+      await loadCredits(userId);
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const refreshCredits = async () => {
+    if (user?.id) {
+      await loadCredits(user.id);
     }
   };
 
@@ -145,14 +190,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error, message: error?.message };
   };
 
-  const signUp = async (email: string, password: string, fullName: string): Promise<AuthResponse> => {
+  const signUp = async (email: string, password: string, fullName: string, phoneNumber: string): Promise<AuthResponse> => {
     const emailRedirectTo = buildRedirectUrl('/login');
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
-          name: fullName
+          name: fullName,
+          phone_number: phoneNumber
         },
         emailRedirectTo,
       }
@@ -166,6 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           id: data.user.id,
           email,
           full_name: fullName,
+          phone_number: phoneNumber || null,
           role: 'client'
         });
 
@@ -238,16 +285,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    setUser(null);
+    setProfile(null);
+    setCredits(null);
     router.push('/login');
   };
 
-  return (
-    <AuthContext.Provider
-      value={{ user, profile, loading, signIn, signInWithGoogle, signUp, sendPasswordReset, signOut }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  const value: AuthContextType = {
+    user,
+    profile,
+    credits,
+    loading,
+    signIn,
+    signInWithGoogle,
+    signUp,
+    sendPasswordReset,
+    refreshCredits,
+    signOut,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

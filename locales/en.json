@@ -20,6 +20,13 @@
     "errorPrefix": "Error",
     "resultsPlaceholder": "Run a detection to display results."
   },
+  "header": {
+    "creditsLabel": "Credits",
+    "creditsLoading": "Sync…",
+    "creditsUnavailable": "N/A",
+    "creditsUnlimited": "Unlimited",
+    "upgrade": "Upgrade plan"
+  },
   "plans": {
     "free": "Free Plan",
     "basic": "Basic Plan",

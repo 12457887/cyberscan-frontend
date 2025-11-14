@@ -1,33 +1,18 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { supabase, Subscription } from '@/lib/supabase';
-import { Check, Zap, Shield, Building2, Crown, Loader2 } from 'lucide-react';
+import { supabase, Subscription, Invoice } from '@/lib/supabase';
+import { Check, Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-
-const ENTERPRISE_PRICE =
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE
-    ? `${process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE}€`
-    : '150€';
-
-type PlanDefinition = {
-  id: 'free' | 'basic' | 'pro' | 'enterprise';
-  icon: typeof Zap;
-  price: string;
-  period?: { fr: string; en: string };
-  name: { fr: string; en: string };
-  description: { fr: string; en: string };
-  creditsLimit: number;
-  creditsLabel: { fr: string; en: string };
-  features: Array<{ fr: string; en: string }>;
-  popular?: boolean;
-};
+import { PLAN_DEFINITIONS, PlanDefinition } from '@/lib/plans';
+import { loadStripeJs } from '@/lib/stripe';
 
 type LocalizedPlan = {
   id: PlanDefinition['id'];
@@ -42,92 +27,13 @@ type LocalizedPlan = {
   features: string[];
 };
 
-const PLAN_DEFINITIONS: PlanDefinition[] = [
-  {
-    id: 'free',
-    name: { fr: 'Gratuit', en: 'Free' },
-    price: '0€',
-    period: { fr: '/mois', en: '/month' },
-    icon: Zap,
-    description: { fr: 'Parfait pour découvrir CyberScan', en: 'Perfect to discover CyberScan' },
-    creditsLimit: 10,
-    creditsLabel: { fr: '10', en: '10' },
-    features: [
-      { fr: '10 crédits par mois', en: '10 credits per month' },
-      { fr: 'Scans légers', en: 'Light scans' },
-      { fr: 'Rapports basiques', en: 'Basic reports' },
-      { fr: 'Support par email', en: 'Email support' },
-      { fr: '1 scan simultané', en: '1 concurrent scan' },
-      { fr: 'Support via tickets communautaires', en: 'Community ticket support' },
-    ],
-  },
-  {
-    id: 'basic',
-    name: { fr: 'Basic', en: 'Basic' },
-    price: '29€',
-    period: { fr: '/mois', en: '/month' },
-    icon: Shield,
-    description: { fr: 'Pour les petites entreprises', en: 'For small businesses' },
-    creditsLimit: 50,
-    creditsLabel: { fr: '50', en: '50' },
-    features: [
-      { fr: '50 crédits par mois', en: '50 credits per month' },
-      { fr: 'Scans légers et complets', en: 'Light and full scans' },
-      { fr: 'Rapports détaillés', en: 'Detailed reports' },
-      { fr: 'Support prioritaire', en: 'Priority support' },
-      { fr: 'Historique 6 mois', en: '6-month history' },
-      { fr: '1 scan simultané', en: '1 concurrent scan' },
-      { fr: 'Support via tickets standard', en: 'Standard ticket support' },
-    ],
-    popular: true,
-  },
-  {
-    id: 'pro',
-    name: { fr: 'Pro', en: 'Pro' },
-    price: '99€',
-    period: { fr: '/mois', en: '/month' },
-    icon: Crown,
-    description: { fr: 'Pour les professionnels exigeants', en: 'For demanding professionals' },
-    creditsLimit: 200,
-    creditsLabel: { fr: '200', en: '200' },
-    features: [
-      { fr: '200 crédits par mois', en: '200 credits per month' },
-      { fr: 'Tous types de scans', en: 'All scan types' },
-      { fr: 'Rapports avancés', en: 'Advanced reports' },
-      { fr: 'Support 24/7', en: '24/7 support' },
-      { fr: 'Détection CMS incluse', en: 'CMS detection included' },
-      { fr: 'Jusqu’à 5 scans simultanés', en: 'Up to 5 concurrent scans' },
-      { fr: 'Support avancé par tickets', en: 'Advanced ticket support' },
-      { fr: 'Planification automatique (hebdo/mensuelle)', en: 'Automatic scheduling (weekly/monthly)' },
-    ],
-  },
-  {
-    id: 'enterprise',
-    name: { fr: 'Enterprise', en: 'Enterprise' },
-    price: ENTERPRISE_PRICE,
-    period: { fr: '/mois', en: '/month' },
-    icon: Building2,
-    description: { fr: 'Solutions sur mesure', en: 'Tailor-made solutions' },
-    creditsLimit: 999999,
-    creditsLabel: { fr: 'Illimités', en: 'Unlimited' },
-    features: [
-      { fr: 'Crédits illimités', en: 'Unlimited credits' },
-      { fr: 'Tous types de scans', en: 'All scan types' },
-      { fr: 'Rapports sur mesure', en: 'Custom reports' },
-      { fr: 'Support dédié', en: 'Dedicated support' },
-      { fr: 'Jusqu’à 10 scans simultanés', en: 'Up to 10 concurrent scans' },
-      { fr: 'Support premium par tickets illimités', en: 'Premium unlimited ticket support' },
-      { fr: 'Planification personnalisée des scans', en: 'Custom scan scheduling' },
-      { fr: 'Détection CMS incluse', en: 'CMS detection included' },
-      { fr: 'Accès complet à l’analyseur avancé', en: 'Full access to the advanced analyzer' },
-    ],
-  },
-];
-
 export default function SubscriptionPage() {
   const { user } = useAuth();
   const { choose } = useLanguage();
-  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
+  const localize = useMemo(
+    () => <T,>(fr: T, en: T) => choose({ fr, en }),
+    [choose]
+  );
   const locale = choose({ fr: 'fr-FR', en: 'en-US' });
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
@@ -136,6 +42,20 @@ export default function SubscriptionPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const handledCheckoutRef = useRef(false);
+  const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<LocalizedPlan | null>(null);
+  const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
+  const [stripeInstance, setStripeInstance] = useState<any>(null);
+  const [stripeElements, setStripeElements] = useState<any>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [invoicesError, setInvoicesError] = useState<string | null>(null);
+  const paymentElementRef = useRef<HTMLDivElement | null>(null);
+  const paymentElementInstance = useRef<any>(null);
   const planConfigs: LocalizedPlan[] = PLAN_DEFINITIONS.map((plan) => ({
     id: plan.id,
     icon: plan.icon,
@@ -149,12 +69,56 @@ export default function SubscriptionPage() {
     features: plan.features.map((feature) => localize(feature.fr, feature.en)),
   }));
   const planNameMap = Object.fromEntries(planConfigs.map((plan) => [plan.id, plan.name]));
+  const formatAmount = (amountCents?: number | null, currency?: string | null) => {
+    const amount = (amountCents ?? 0) / 100;
+    const safeCurrency = (currency || 'EUR').toUpperCase();
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: safeCurrency }).format(amount);
+  };
+  const formatDate = (isoDate?: string | null) => {
+    if (!isoDate) return '—';
+    const date = new Date(isoDate);
+    if (Number.isNaN(date.getTime())) return isoDate;
+    return date.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+  };
 
   useEffect(() => {
     if (user) {
       loadSubscription();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      loadInvoices();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!publishableKey || typeof window === 'undefined') {
+      return;
+    }
+    let canceled = false;
+    loadStripeJs()
+      .then((StripeConstructor) => {
+        if (canceled || !StripeConstructor) return;
+        const instance = StripeConstructor(publishableKey);
+        if (!instance) {
+          throw new Error('Impossible d’initialiser Stripe.');
+        }
+        if (!canceled) {
+          setStripeInstance(instance);
+        }
+      })
+      .catch((error) => {
+        if (!canceled) {
+          console.error('Erreur de chargement Stripe.js:', error);
+          setPaymentError(error?.message || 'Stripe.js est indisponible.');
+        }
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [publishableKey]);
 
   const loadSubscription = async () => {
     if (!user) return;
@@ -300,7 +264,31 @@ export default function SubscriptionPage() {
     setActionLoadingPlan(null);
   };
 
-  const handleStripeCheckout = async (plan: LocalizedPlan) => {
+  const loadInvoices = async () => {
+    if (!user) return;
+    setInvoicesLoading(true);
+    setInvoicesError(null);
+    try {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+      setInvoices(data ?? []);
+    } catch (error) {
+      console.error('Error loading invoices:', error);
+      setInvoicesError(
+        localize("Impossible de charger l'historique des paiements.", 'Unable to load payment history.')
+      );
+    } finally {
+      setInvoicesLoading(false);
+    }
+  };
+
+  const handleStripeCheckout = (plan: LocalizedPlan) => {
     if (!user) return;
 
     if (plan.id === 'free') {
@@ -308,45 +296,97 @@ export default function SubscriptionPage() {
       return;
     }
 
-    if (plan.id === 'enterprise') {
-      handleSubscribe(plan.id, plan.creditsLimit, {
-        successMessage: localize(
-          'Plan Enterprise activé. Notre équipe vous contactera pour la configuration avancée.',
-          'Enterprise plan activated. Our team will contact you for advanced setup.'
+    if (!publishableKey) {
+      setStatusMessage({
+        type: 'error',
+        text: localize(
+          'Configuration Stripe incomplète. Contactez un administrateur.',
+          'Stripe configuration is incomplete. Please contact an administrator.'
         ),
       });
       return;
     }
 
+    setPaymentError(null);
     setStatusMessage(null);
-    setActionLoadingPlan(plan.id);
+    setSelectedPlan(plan);
+    setPaymentDialogOpen(true);
+  };
 
+  const syncSubscriptionCredits = async (paymentIntentId: string | undefined | null) => {
+    if (!paymentIntentId || !user || !selectedPlan) {
+      return;
+    }
     try {
       const response = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId: plan.id, userId: user.id, email: user.email }),
+        body: JSON.stringify({
+          action: 'sync-subscription',
+          paymentIntentId,
+          planId: selectedPlan.id,
+          userId: user.id,
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        const message =
+          payload?.detail || payload?.error || localize('Impossible de synchroniser votre abonnement.', 'Unable to sync your subscription.');
+        throw new Error(message);
+      }
+      await loadInvoices();
+    } catch (error) {
+      console.error('Stripe sync error:', error);
+      const message =
+        error instanceof Error ? error.message : localize('La synchronisation de votre abonnement a échoué.', 'Subscription sync failed.');
+      setStatusMessage({ type: 'error', text: message });
+      throw new Error(message);
+    }
+  };
+
+  const handleConfirmPayment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!stripeInstance || !stripeElements || !selectedPlan) {
+      return;
+    }
+    setConfirmingPayment(true);
+    setPaymentError(null);
+    try {
+      const { error, paymentIntent } = await stripeInstance.confirmPayment({
+        elements: stripeElements,
+        redirect: 'if_required',
+        confirmParams: {
+          return_url:
+            typeof window !== 'undefined'
+              ? `${window.location.origin}/dashboard/subscription?success=true&plan=${selectedPlan.id}`
+              : undefined,
+        },
       });
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.error || localize('Erreur lors de la création de la session Stripe.', 'Error creating the Stripe session.'));
+      if (error) {
+        throw new Error(error.message || localize('Le paiement a échoué.', 'Payment failed.'));
       }
 
-      const data = await response.json();
-      if (data?.url) {
-        window.location.href = data.url as string;
+      if (paymentIntent?.status === 'succeeded' || paymentIntent?.status === 'processing') {
+        await syncSubscriptionCredits(paymentIntent?.id);
+        setPaymentDialogOpen(false);
+        router.push(`/dashboard/subscription?success=true&plan=${selectedPlan.id}`);
         return;
       }
 
-      throw new Error(localize('URL de redirection Stripe manquante.', 'Missing Stripe redirect URL.'));
-    } catch (error: any) {
-      console.error('Stripe checkout error:', error);
       setStatusMessage({
-        type: 'error',
-        text: error?.message || localize('Impossible de démarrer le paiement Stripe.', 'Unable to start Stripe checkout.'),
+        type: 'success',
+        text: localize(
+          'Paiement initié. Suivez les instructions supplémentaires si nécessaire.',
+          'Payment initiated. Follow any additional instructions if required.'
+        ),
       });
-      setActionLoadingPlan(null);
+      setPaymentDialogOpen(false);
+    } catch (error: any) {
+      console.error('Stripe confirmation error:', error);
+      setPaymentError(error?.message || localize('Le paiement a échoué.', 'Payment failed.'));
+    } finally {
+      setConfirmingPayment(false);
     }
   };
 
@@ -365,9 +405,14 @@ export default function SubscriptionPage() {
       const planConfig = planConfigs.find((p) => p.id === planParam);
       if (planConfig) {
         handledCheckoutRef.current = true;
-        handleSubscribe(planConfig.id, planConfig.creditsLimit, {
-          successMessage: localize('Paiement confirmé, votre abonnement est actif.', 'Payment confirmed, your subscription is active.'),
+        setStatusMessage({
+          type: 'success',
+          text: localize(
+            `Paiement confirmé ! Votre plan ${planNameMap[planConfig.id]} va être mis à jour.`,
+            `Payment confirmed! Your ${planNameMap[planConfig.id]} plan will be updated shortly.`
+          ),
         });
+        loadSubscription();
       }
     }
 
@@ -386,6 +431,106 @@ export default function SubscriptionPage() {
       router.replace(`${window.location.pathname}${newQuery ? `?${newQuery}` : ''}`, { scroll: false });
     }
   }, [searchParams, user, router]);
+
+  useEffect(() => {
+    if (!paymentDialogOpen || !selectedPlan || !user) {
+      return;
+    }
+    let active = true;
+
+    const preparePayment = async () => {
+      setPaymentLoading(true);
+      setPaymentError(null);
+      setPaymentClientSecret(null);
+      try {
+        const response = await fetch('/api/stripe/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            planId: selectedPlan.id,
+            userId: user.id,
+            email: user.email,
+            checkoutMode: 'embedded',
+          }),
+        });
+        const textPayload = await response.text();
+        let data: any = null;
+        try {
+          data = textPayload ? JSON.parse(textPayload) : null;
+        } catch {
+          throw new Error(localize('Réponse Stripe inattendue.', 'Unexpected response from Stripe.'));
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            data?.detail ||
+              data?.error ||
+              localize('Impossible de préparer le paiement Stripe.', 'Unable to prepare the Stripe payment.')
+          );
+        }
+        if (!data?.clientSecret) {
+          throw new Error(localize('Client secret Stripe manquant.', 'Missing Stripe client secret.'));
+        }
+        if (active) {
+          setPaymentClientSecret(data.clientSecret);
+        }
+      } catch (error: any) {
+        if (active) {
+          console.error('Erreur lors de la préparation du paiement Stripe:', error);
+          setPaymentError(
+            error?.message || localize('Impossible de préparer le paiement Stripe.', 'Unable to prepare the Stripe payment.')
+          );
+        }
+      } finally {
+        if (active) {
+          setPaymentLoading(false);
+        }
+      }
+    };
+
+    preparePayment();
+    return () => {
+      active = false;
+    };
+  }, [paymentDialogOpen, selectedPlan, user, localize]);
+
+  useEffect(() => {
+    if (!stripeInstance || !paymentClientSecret || !paymentDialogOpen) {
+      return;
+    }
+    const container = paymentElementRef.current;
+    if (!container) {
+      return;
+    }
+    const elements = stripeInstance.elements({
+      clientSecret: paymentClientSecret,
+      appearance: { theme: 'stripe' },
+    });
+    setStripeElements(elements);
+    const paymentElement = elements.create('payment');
+    paymentElementInstance.current = paymentElement;
+    paymentElement.mount(container);
+
+    return () => {
+      paymentElementInstance.current?.destroy?.();
+      paymentElementInstance.current = null;
+      setStripeElements(null);
+    };
+  }, [stripeInstance, paymentClientSecret, paymentDialogOpen]);
+
+  useEffect(() => {
+    if (paymentDialogOpen) {
+      return;
+    }
+    paymentElementInstance.current?.destroy?.();
+    paymentElementInstance.current = null;
+    setStripeElements(null);
+    setPaymentClientSecret(null);
+    setPaymentError(null);
+    setPaymentLoading(false);
+    setConfirmingPayment(false);
+    setSelectedPlan(null);
+  }, [paymentDialogOpen]);
 
   if (loading) {
     return (
@@ -532,17 +677,10 @@ export default function SubscriptionPage() {
                     className="w-full"
                     variant={plan.popular ? 'default' : 'outline'}
                     onClick={() => {
-                      if (isEnterprise) {
-                        return handleSubscribe(plan.id, plan.creditsLimit, {
-                          successMessage: localize(
-                            'Plan Enterprise activé. Notre équipe vous contactera pour la configuration avancée.',
-                            'Enterprise plan activated. Our team will contact you for advanced setup.'
-                          ),
-                        });
+                      if (plan.id === 'free') {
+                        return handleSubscribe(plan.id, plan.creditsLimit, { successMessage: localize('Abonnement activé.', 'Plan activated.') });
                       }
-                      return plan.id === 'free'
-                        ? handleSubscribe(plan.id, plan.creditsLimit, { successMessage: localize('Abonnement activé.', 'Plan activated.') })
-                        : handleStripeCheckout(plan);
+                      return handleStripeCheckout(plan);
                     }}
                     disabled={isCurrentPlan || actionLoadingPlan === plan.id}
                   >
@@ -566,6 +704,68 @@ export default function SubscriptionPage() {
             );
           })}
         </div>
+
+        <Card className="mx-auto max-w-4xl">
+          <CardHeader>
+            <CardTitle>{localize('Historique des paiements', 'Payment history')}</CardTitle>
+            <CardDescription>
+              {localize('Consultez vos dernières transactions Stripe.', 'Review your latest Stripe transactions.')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {invoicesError && (
+              <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {invoicesError}
+              </div>
+            )}
+            {invoicesLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-600">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {localize('Chargement des transactions...', 'Loading transactions...')}
+              </div>
+            ) : invoices.length === 0 ? (
+              <p className="text-sm text-slate-600">
+                {localize('Aucune transaction trouvée pour le moment.', 'No payment history yet.')}
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase text-slate-500">
+                      <th className="px-2 py-2 font-medium">{localize('Date', 'Date')}</th>
+                      <th className="px-2 py-2 font-medium">{localize('Plan', 'Plan')}</th>
+                      <th className="px-2 py-2 font-medium">{localize('Montant', 'Amount')}</th>
+                      <th className="px-2 py-2 font-medium">{localize('Statut', 'Status')}</th>
+                      <th className="px-2 py-2 font-medium">{localize('Carte', 'Card')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoices.map((invoice) => {
+                      const readablePlan =
+                        planNameMap[invoice.plan_type as keyof typeof planNameMap] ||
+                        invoice.plan_type.charAt(0).toUpperCase() + invoice.plan_type.slice(1);
+                      const statusLabel = invoice.payment_status || localize('Inconnu', 'Unknown');
+                      const cardLabel = invoice.card_brand && invoice.card_last4
+                        ? `${invoice.card_brand.toUpperCase()} •••• ${invoice.card_last4}`
+                        : localize('Non disponible', 'Not available');
+                      return (
+                        <tr key={invoice.id} className="border-t border-slate-100">
+                          <td className="px-2 py-3 text-slate-700">{formatDate(invoice.created_at)}</td>
+                          <td className="px-2 py-3 text-slate-700">{readablePlan}</td>
+                          <td className="px-2 py-3 font-medium text-slate-900">
+                            {formatAmount(invoice.amount_total_cents, invoice.currency)}
+                          </td>
+                          <td className="px-2 py-3 text-slate-700">{statusLabel}</td>
+                          <td className="px-2 py-3 text-slate-700">{cardLabel}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card className="mx-auto max-w-4xl">
           <CardHeader>
@@ -608,6 +808,73 @@ export default function SubscriptionPage() {
           </CardContent>
         </Card>
       </div>
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{localize('Finaliser votre paiement', 'Complete your payment')}</DialogTitle>
+            <DialogDescription>
+              {selectedPlan
+                ? localize(
+                    `Plan ${selectedPlan.name}`,
+                    `Plan ${selectedPlan.name}`
+                  )
+                : localize('Choisissez un plan pour continuer.', 'Select a plan to continue.')}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedPlan && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-slate-600">{localize('Plan sélectionné', 'Selected plan')}</p>
+                  <p className="text-base font-semibold text-slate-900">{selectedPlan.name}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-slate-900">{selectedPlan.price}</p>
+                  {selectedPlan.period && <p className="text-xs text-slate-500">{selectedPlan.period}</p>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {paymentError && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{paymentError}</div>
+          )}
+
+          {paymentLoading && (
+            <div className="flex items-center justify-center gap-2 text-sm text-slate-600">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {localize('Préparation du paiement...', 'Preparing payment...')}
+            </div>
+          )}
+
+          {!paymentLoading && paymentClientSecret && (
+            <form className="space-y-4" onSubmit={handleConfirmPayment}>
+              <div ref={paymentElementRef} className="rounded-md border border-slate-200 bg-white p-3" />
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={!stripeInstance || !stripeElements || confirmingPayment}
+                >
+                {confirmingPayment ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {localize('Confirmation...', 'Confirming...')}
+                  </>
+                ) : (
+                  localize('Confirmer le paiement', 'Confirm payment')
+                )}
+              </Button>
+            </form>
+          )}
+
+          {!paymentLoading && !paymentClientSecret && !paymentError && (
+            <p className="text-sm text-slate-600">
+              {localize('Initialisation du paiement en cours...', 'Initializing payment...')}
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

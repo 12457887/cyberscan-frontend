@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Shield, Zap, Lock, TrendingUp, CheckCircle, Check, Crown, Building2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { QuickScanCard } from '@/components/QuickScanCard';
 const showPricing = false; // 🔹 mets à true pour réafficher les plans
 
 export default function Home() {
@@ -95,6 +96,9 @@ export default function Home() {
               <Button size="lg" className="bg-slate-700 hover:bg-slate-600 text-white border border-slate-600" asChild>
                 <Link href="/login">{localize('Voir la démo', 'See the demo')}</Link>
               </Button>
+            </div>
+            <div className="max-w-3xl mx-auto mt-10">
+              <QuickScanCard />
             </div>
           </div>
         </section>

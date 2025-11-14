@@ -1,11 +1,14 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Badge } from './badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card';
 import { TicketDialog } from './ticket-dialog';
-import { Ticket } from '@/lib/supabase';
+import { Ticket, supabase } from '@/lib/supabase';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { Textarea } from './textarea';
+import { Button } from './button';
 
 interface TicketsPanelProps {
   tickets: Ticket[];
@@ -34,6 +37,9 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
     [choose]
   );
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, { message: string; status: Ticket['status'] }>>({});
+  const [replyErrors, setReplyErrors] = useState<Record<string, string | null>>({});
+  const [sendingTicketId, setSendingTicketId] = useState<string | null>(null);
 
   const getStatusBadgeStyle = (status: string) => {
     switch (status) {
@@ -79,6 +85,52 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
 
   const toggleTicketDetails = (ticketId: string) => {
     setExpandedTicketId((prev) => (prev === ticketId ? null : ticketId));
+  };
+
+  const updateDraft = (ticketId: string, patch: Partial<{ message: string; status: Ticket['status'] }>) => {
+    setReplyDrafts((prev) => ({
+      ...prev,
+      [ticketId]: {
+        message: patch.message ?? prev[ticketId]?.message ?? '',
+        status: patch.status ?? prev[ticketId]?.status ?? 'in_progress',
+      },
+    }));
+  };
+
+  const handleAdminResponse = async (ticket: Ticket) => {
+    const ticketId = ticket.id;
+    const currentDraft = replyDrafts[ticketId]?.message ?? '';
+    if (!currentDraft.trim()) {
+      setReplyErrors((prev) => ({ ...prev, [ticketId]: localize('Veuillez écrire une réponse.', 'Please write a reply.') }));
+      return;
+    }
+    setReplyErrors((prev) => ({ ...prev, [ticketId]: null }));
+    setSendingTicketId(ticketId);
+    try {
+      const nextStatus = replyDrafts[ticketId]?.status ?? (ticket.status === 'resolved' ? 'resolved' : 'in_progress');
+      const { error } = await supabase
+        .from('tickets')
+        .update({
+          admin_response: currentDraft.trim(),
+          admin_response_at: new Date().toISOString(),
+          status: nextStatus,
+        })
+        .eq('id', ticketId);
+
+      if (error) {
+        throw error;
+      }
+      updateDraft(ticketId, { message: '', status: nextStatus });
+      onTicketCreated();
+    } catch (err) {
+      console.error('Erreur en répondant au ticket:', err);
+      setReplyErrors((prev) => ({
+        ...prev,
+        [ticketId]: localize('Impossible d\'envoyer la réponse.', 'Unable to send the reply.'),
+      }));
+    } finally {
+      setSendingTicketId(null);
+    }
   };
 
   return (
@@ -174,6 +226,73 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
                       {localize('Créé le', 'Created on')}{' '}
                       {new Date(ticket.created_at).toLocaleString(locale)}
                     </p>
+
+                    {ticket.admin_response && (
+                      <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 p-3 text-slate-800 text-sm">
+                        <p className="text-xs uppercase font-semibold text-emerald-700 tracking-wide mb-1">
+                          {localize('Réponse de l’équipe', 'Team response')}
+                        </p>
+                        <p>{ticket.admin_response}</p>
+                        {ticket.admin_response_at && (
+                          <p className="mt-1 text-[11px] text-emerald-700/70">
+                            {localize('Répondu le', 'Replied on')}{' '}
+                            {new Date(ticket.admin_response_at).toLocaleString(locale)}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {isAdmin && (
+                      <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 text-sm space-y-2">
+                        <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">
+                          {localize('Répondre au ticket', 'Reply to ticket')}
+                        </p>
+                        <Textarea
+                          value={replyDrafts[ticket.id]?.message ?? ''}
+                          onChange={(event) => updateDraft(ticket.id, { message: event.target.value })}
+                          placeholder={localize(
+                            'Tapez votre réponse pour le client…',
+                            'Type your response to the customer…'
+                          )}
+                          className="text-sm"
+                          rows={3}
+                        />
+                        <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                          <select
+                            value={
+                              replyDrafts[ticket.id]?.status ??
+                              (ticket.status === 'resolved' ? 'resolved' : 'in_progress')
+                            }
+                            onChange={(event) =>
+                              updateDraft(ticket.id, { status: event.target.value as Ticket['status'] })
+                            }
+                            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="in_progress">{statusLabels.in_progress}</option>
+                            <option value="resolved">{statusLabels.resolved}</option>
+                            <option value="open">{statusLabels.open}</option>
+                          </select>
+                          <Button
+                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                            type="button"
+                            disabled={sendingTicketId === ticket.id}
+                            onClick={() => handleAdminResponse(ticket)}
+                          >
+                            {sendingTicketId === ticket.id ? (
+                              <span className="flex items-center gap-2 text-sm">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                {localize('Envoi…', 'Sending…')}
+                              </span>
+                            ) : (
+                              localize('Envoyer la réponse', 'Send reply')
+                            )}
+                          </Button>
+                        </div>
+                        {replyErrors[ticket.id] && (
+                          <p className="text-xs text-red-600">{replyErrors[ticket.id]}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

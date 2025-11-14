@@ -15,6 +15,8 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { signUp } = useAuth();
@@ -27,7 +29,29 @@ export default function RegisterPage() {
     setError('');
     setLoading(true);
 
-    const { error } = await signUp(email, password, fullName);
+    if (!phoneNumber.trim()) {
+      setError(
+        localize(
+          'Veuillez saisir un numéro de téléphone valide.',
+          'Please provide a valid phone number.'
+        )
+      );
+      setLoading(false);
+      return;
+    }
+
+    if (!acceptedTerms) {
+      setError(
+        localize(
+          "Vous devez accepter les conditions générales d'utilisation avant de poursuivre.",
+          'You must accept the terms and conditions before continuing.'
+        )
+      );
+      setLoading(false);
+      return;
+    }
+
+    const { error } = await signUp(email, password, fullName, phoneNumber.trim());
 
     if (error) {
       setError(error.message);
@@ -84,6 +108,35 @@ export default function RegisterPage() {
                 required
                 minLength={6}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phoneNumber">{localize('Numéro de téléphone', 'Phone number')}</Label>
+              <Input
+                id="phoneNumber"
+                type="tel"
+                placeholder="+33 6 12 34 56 78"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+              <input
+                id="terms"
+                type="checkbox"
+                className="mt-1 h-4 w-4 accent-blue-600"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+              />
+              <Label htmlFor="terms" className="text-sm text-slate-600 font-normal">
+                {localize(
+                  "J'ai lu et j'accepte les conditions générales de vente et d'utilisation.",
+                  'I have read and accept the terms and conditions.'
+                )}{' '}
+                <Link href="/conditions-generales" className="text-blue-600 hover:underline">
+                  {localize('Consulter les conditions', 'View terms')}
+                </Link>
+              </Label>
             </div>
             {error && (
               <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">

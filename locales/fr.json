@@ -20,6 +20,13 @@
     "errorPrefix": "Erreur",
     "resultsPlaceholder": "Lancez une détection pour visualiser les résultats."
   },
+  "header": {
+    "creditsLabel": "Crédits",
+    "creditsLoading": "Calcul...",
+    "creditsUnavailable": "N/A",
+    "creditsUnlimited": "Illimités",
+    "upgrade": "Améliorer mon plan"
+  },
   "plans": {
     "free": "Abonnement Gratuit",
     "basic": "Abonnement Basic",

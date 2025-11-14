@@ -3,7 +3,7 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
-import { Shield, Home, Scan, FileText, CreditCard, User, Bell, LogOut, Menu, X, Settings } from 'lucide-react';
+import { Shield, Home, Scan, FileText, CreditCard, User, Bell, LogOut, Menu, X, Settings, Zap, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,12 +23,13 @@ const NAV_ITEMS = [
 const ADMIN_NAV_ITEMS = [{ key: 'nav.admin', href: '/admin', icon: Settings }] as const;
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading, signOut } = useAuth();
+  const { user, profile, credits, loading, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { plan } = useSubscriptionPlan();
-  const { t, language, setLanguage } = useLanguage();
+  const { t, language, setLanguage, choose } = useLanguage();
+  const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const planLabel = useMemo(() => {
     if (!plan) {
       return null;
@@ -42,6 +43,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.push('/login');
     }
   }, [user, loading, router]);
+
+  const creditDisplay =
+    credits
+      ? `${credits.remaining}/${credits.total}`
+      : loading
+      ? t('header.creditsLoading')
+      : profile?.role === 'admin'
+      ? t('header.creditsUnlimited')
+      : t('header.creditsUnavailable');
 
   if (loading) {
     return (
@@ -74,6 +84,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   const filteredNavigation = NAV_ITEMS.filter((item) => shouldDisplayNavItem(item.href));
+  const upgradeTagline = localize('Plus de scans et alertes avancées', 'More scans & advanced alerts');
+
+  const UpgradeButton = () => (
+    <Button
+      className="group w-full justify-between bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white shadow-lg border-0 hover:shadow-2xl transition-all hover:-translate-y-0.5 focus-visible:ring-offset-0"
+      asChild
+    >
+      <Link href="/dashboard/subscription" className="flex w-full items-center justify-between gap-3">
+        <div className="text-left">
+          <p className="text-sm font-semibold leading-none">{t('header.upgrade')}</p>
+          <p className="text-[11px] text-white/80 mt-1 leading-none">{upgradeTagline}</p>
+        </div>
+        <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+      </Link>
+    </Button>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -88,6 +114,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
 
             <div className="hidden md:flex items-center space-x-4">
+              <div className="flex items-center gap-2 rounded-full bg-blue-50 border border-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
+                <Zap className="w-4 h-4" />
+                <span>{t('header.creditsLabel')}</span>
+                <span className="text-slate-900">{creditDisplay}</span>
+              </div>
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <label htmlFor="language-select" className="text-xs uppercase tracking-wide">
                   {t('language.label')}
@@ -129,8 +160,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-slate-200">
-            <div className="px-2 pt-2 pb-3 space-y-1">
-              {filteredNavigation.map((item) => (
+          <div className="px-2 pt-2 pb-3 space-y-1">
+            {filteredNavigation.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -141,6 +172,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </Link>
               ))}
               <div className="px-3 py-2">
+                <UpgradeButton />
+              </div>
+              <div className="px-3 py-2 space-y-3">
                 <label htmlFor="language-select-mobile" className="text-xs uppercase tracking-wide text-slate-500">
                   {t('language.label')}
                 </label>
@@ -153,6 +187,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <option value="fr">{t('language.short.fr')}</option>
                   <option value="en">{t('language.short.en')}</option>
                 </select>
+                <div className="flex items-center gap-2 rounded-full bg-blue-50 border border-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
+                  <Zap className="w-4 h-4" />
+                  <span>{t('header.creditsLabel')}</span>
+                  <span className="text-slate-900">{creditDisplay}</span>
+                </div>
               </div>
               <button
                 onClick={signOut}
@@ -212,6 +251,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   })}
                 </>
               )}
+              <div className="mt-6">
+                <UpgradeButton />
+              </div>
             </nav>
           </div>
         </aside>
