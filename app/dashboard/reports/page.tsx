@@ -50,7 +50,7 @@ export default function ReportsPage() {
   const [scans, setScans] = useState<Scan[]>([]);
   const [vulnerabilities, setVulnerabilities] = useState<{ [key: string]: Vulnerability[] }>({});
   const [loading, setLoading] = useState(true);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const [filters, setFilters] = useState({
     search: '',
     cms: 'all',

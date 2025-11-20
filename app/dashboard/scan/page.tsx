@@ -46,7 +46,6 @@ export default function ScanPage() {
     [choose]
   );
   const router = useRouter();
-  const [siteName, setSiteName] = useState('');
   const [siteUrl, setSiteUrl] = useState('');
   const [scanType, setScanType] = useState<'light' | 'complete'>('light');
   const [loading, setLoading] = useState(false);
@@ -241,25 +240,14 @@ export default function ScanPage() {
         }
       }
 
-      const trimmedSiteName = siteName.trim();
-      const displayNames: string[] = [];
-      const scanInserts = normalizedUrls.map((url, index) => {
-        const host = new URL(url).hostname;
-        const derivedName =
-          normalizedUrls.length === 1
-            ? trimmedSiteName || host
-            : trimmedSiteName
-              ? `${trimmedSiteName} #${index + 1}`
-              : host;
-        displayNames.push(derivedName);
-        return {
-          user_id: user.id,
-          site_name: derivedName,
-          site_url: url,
-          scan_type: scanType,
-          status: 'pending',
-        };
-      });
+      const displayNames = normalizedUrls.map((url) => new URL(url).hostname);
+      const scanInserts = normalizedUrls.map((url, index) => ({
+        user_id: user.id,
+        site_name: displayNames[index],
+        site_url: url,
+        scan_type: scanType,
+        status: 'pending',
+      }));
 
       const { data: scanRows, error: scanError } = await supabase
         .from('scans')
@@ -422,19 +410,6 @@ export default function ScanPage() {
 
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* === Nom du site === */}
-              <div className="space-y-2">
-                <Label htmlFor="siteName">{localize('Nom du site', 'Site name')}</Label>
-                <Input
-                  id="siteName"
-                  type="text"
-                  placeholder={localize('Mon Site Web', 'My Website')}
-                  value={siteName}
-                  onChange={(e) => setSiteName(e.target.value)}
-                  required={PLAN_CONCURRENCY[planType] <= 1}
-                />
-                </div>
-
               {/* === URL === */}
               <div className="space-y-2">
                 <Label htmlFor="siteUrl">{localize('URL du site', 'Website URL')}</Label>

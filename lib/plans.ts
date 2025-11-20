@@ -8,7 +8,7 @@ export type PlanDefinition = {
   price: string;
   period?: { fr: string; en: string };
   name: { fr: string; en: string };
-  description: { fr: string; en: string };
+  description?: { fr: string; en: string };
   creditsLimit: number;
   creditsLabel: { fr: string; en: string };
   features: Array<{ fr: string; en: string }>;
@@ -18,89 +18,74 @@ export type PlanDefinition = {
 const ENTERPRISE_PRICE =
   process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE
     ? `${process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE}€`
-    : '150€';
+    : '39€';
 
 export const PLAN_DEFINITIONS: PlanDefinition[] = [
   {
     id: 'free',
-    name: { fr: 'Gratuit', en: 'Free' },
+    name: { fr: ' FREE ', en: ' FREE ' },
     price: '0€',
     period: { fr: '/mois', en: '/month' },
     icon: Zap,
-    description: { fr: 'Parfait pour découvrir CyberScan', en: 'Perfect to discover CyberScan' },
-    creditsLimit: 10,
-    creditsLabel: { fr: '10', en: '10' },
+    description: { fr: '', en: '' },
+    creditsLimit: 3,
+    creditsLabel: { fr: '3', en: '3' },
     features: [
-      { fr: '10 crédits par mois', en: '10 credits per month' },
-      { fr: 'Scans légers', en: 'Light scans' },
-      { fr: 'Rapports basiques', en: 'Basic reports' },
-      { fr: 'Support par email', en: 'Email support' },
-      { fr: '1 scan simultané', en: '1 concurrent scan' },
-      { fr: 'Support via tickets communautaires', en: 'Community ticket support' },
+      { fr: '3 crédits de scan', en: '3 scan credits' },
+      { fr: '1 site', en: '1 site' },
+      { fr: 'Dashboard basique', en: 'Basic dashboard' },
+      { fr: 'Rapports simples', en: 'Simple reports' },
     ],
   },
   {
     id: 'basic',
-    name: { fr: 'Basic', en: 'Basic' },
-    price: '29€',
+    name: { fr: ' BASIC ', en: 'BASIC ' },
+    price: '9€',
     period: { fr: '/mois', en: '/month' },
     icon: Shield,
-    description: { fr: 'Pour les petites entreprises', en: 'For small businesses' },
-    creditsLimit: 50,
-    creditsLabel: { fr: '50', en: '50' },
+    description: { fr: '', en: '' },
+    creditsLimit: 20,
+    creditsLabel: { fr: '20', en: '20' },
     features: [
-      { fr: '50 crédits par mois', en: '50 credits per month' },
-      { fr: 'Scans légers et complets', en: 'Light and full scans' },
+      { fr: '20 crédits', en: '20 credits' },
+      { fr: 'Scan automatique hebdomadaire', en: 'Weekly automatic scan' },
       { fr: 'Rapports détaillés', en: 'Detailed reports' },
-      { fr: 'Support prioritaire', en: 'Priority support' },
-      { fr: 'Historique 6 mois', en: '6-month history' },
-      { fr: 'Jusqu’à 5 scans simultanés', en: 'Up to 5 concurrent scans' },
-      { fr: 'Support via tickets standard', en: 'Standard ticket support' },
+      { fr: 'Alertes email', en: 'Email alerts' },
+      { fr: 'Support standard', en: 'Standard support' },
     ],
     popular: true,
   },
   {
     id: 'pro',
-    name: { fr: 'Pro', en: 'Pro' },
-    price: '99€',
+    name: { fr: ' PRO ', en: ' PRO ' },
+    price: '19€',
     period: { fr: '/mois', en: '/month' },
     icon: Crown,
-    description: {
-      fr: 'Pour les professionnels exigeants, scannez jusqu’à 10 sites en parallèle',
-      en: 'For demanding professionals, scan up to 10 sites in parallel',
-    },
-    creditsLimit: 200,
-    creditsLabel: { fr: '200', en: '200' },
+    description: { fr: '', en: '' },
+    creditsLimit: 50,
+    creditsLabel: { fr: '50', en: '50' },
     features: [
-      { fr: '200 crédits par mois', en: '200 credits per month' },
-      { fr: 'Tous types de scans', en: 'All scan types' },
+      { fr: '50 crédits', en: '50 credits' },
+      { fr: 'Analyse quotidienne', en: 'Daily analysis' },
       { fr: 'Rapports avancés', en: 'Advanced reports' },
-      { fr: 'Support 24/7', en: '24/7 support' },
-      { fr: 'Détection CMS incluse', en: 'CMS detection included' },
-      { fr: 'Jusqu’à 10 scans simultanés', en: 'Up to 10 concurrent scans' },
-      { fr: 'Support avancé par tickets', en: 'Advanced ticket support' },
-      { fr: 'Planification automatique (hebdo/mensuelle)', en: 'Automatic scheduling (weekly/monthly)' },
+      { fr: 'Dashboard complet', en: 'Full dashboard' },
+      { fr: 'Support prioritaire', en: 'Priority support' },
     ],
   },
   {
     id: 'enterprise',
-    name: { fr: 'Enterprise', en: 'Enterprise' },
+    name: { fr: ' PREMIUM — Full Access', en: ' PREMIUM — Full Access' },
     price: ENTERPRISE_PRICE,
     period: { fr: '/mois', en: '/month' },
     icon: Building2,
-    description: { fr: 'Solutions sur mesure', en: 'Tailor-made solutions' },
+    description: { fr: '', en: '' },
     creditsLimit: 999999,
     creditsLabel: { fr: 'Illimités', en: 'Unlimited' },
     features: [
       { fr: 'Crédits illimités', en: 'Unlimited credits' },
-      { fr: 'Tous types de scans', en: 'All scan types' },
-      { fr: 'Rapports sur mesure', en: 'Custom reports' },
+      { fr: 'Accès à toutes les fonctionnalités', en: 'Access to all features' },
+      { fr: 'Rapports complets', en: 'Full reports' },
       { fr: 'Support dédié', en: 'Dedicated support' },
-      { fr: 'Jusqu’à 10 scans simultanés', en: 'Up to 10 concurrent scans' },
-      { fr: 'Support premium par tickets illimités', en: 'Premium unlimited ticket support' },
-      { fr: 'Planification personnalisée des scans', en: 'Custom scan scheduling' },
-      { fr: 'Détection CMS incluse', en: 'CMS detection included' },
-      { fr: 'Accès complet à l’analyseur avancé', en: 'Full access to the advanced analyzer' },
     ],
   },
 ];

@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { createContext, useContext, useEffect, useState } from 'react';
-import { Session, User } from '@supabase/supabase-js';
-import { supabase, Profile } from '@/lib/supabase';
-import { useRouter } from 'next/navigation';
+import { createContext, useContext, useEffect, useState } from "react";
+import { Session, User } from "@supabase/supabase-js";
+import { supabase, Profile } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 
 type AuthResponse = {
   error: any;
@@ -22,31 +22,18 @@ type AuthContextType = {
   credits: CreditsSummary | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<AuthResponse>;
+  signInWithOtp: (email: string) => Promise<AuthResponse>;
+  verifyOtp: (email: string, token: string, fullName?: string) => Promise<AuthResponse>;
   signInWithGoogle: () => Promise<AuthResponse>;
-  signUp: (email: string, password: string, fullName: string, phoneNumber: string) => Promise<AuthResponse>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string,
+    phoneNumber: string
+  ) => Promise<AuthResponse>;
   sendPasswordReset: (email: string) => Promise<AuthResponse>;
   refreshCredits: () => Promise<void>;
   signOut: () => Promise<void>;
-};
-
-const appUrlFromEnv =
-  process.env.NEXT_PUBLIC_APP_URL ||
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  undefined;
-
-const resolveAppUrl = () => {
-  if (appUrlFromEnv) {
-    return appUrlFromEnv.replace(/\/$/, '');
-  }
-  if (typeof window !== 'undefined') {
-    return window.location.origin;
-  }
-  return undefined;
-};
-
-const buildRedirectUrl = (path: string) => {
-  const base = resolveAppUrl();
-  return base ? `${base}${path}` : undefined;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -58,18 +45,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  /** -------------------------
+   * LOAD CREDITS
+   --------------------------*/
   const loadCredits = async (userId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('credits')
-        .select('total_credits, used_credits, remaining_credits')
-        .eq('user_id', userId)
+      const { data } = await supabase
+        .from("credits")
+        .select("total_credits, used_credits, remaining_credits")
+        .eq("user_id", userId)
         .maybeSingle();
 
-      if (error) {
-        console.error('Error loading credits:', error);
-        setCredits(null);
-      } else if (data) {
+      if (data) {
         setCredits({
           total: data.total_credits ?? 0,
           used: data.used_credits ?? 0,
@@ -78,239 +65,286 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setCredits(null);
       }
-    } catch (error) {
-      console.error('Error loading credits:', error);
+    } catch (err) {
+      console.error("Error loading credits:", err);
       setCredits(null);
     }
   };
 
+  /** -------------------------
+   * INIT SESSION
+   --------------------------*/
   useEffect(() => {
-    const syncSession = async (event: string, session: Session | null) => {
-      try {
-        await fetch('/api/auth/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ event, session }),
-        });
-      } catch (error) {
-        console.error('Failed to sync auth session cookie:', error);
-      }
-    };
-
     supabase.auth.getSession().then(({ data: { session } }) => {
-      syncSession('INITIAL_SESSION', session);
       setUser(session?.user ?? null);
-      if (session?.user) {
-        loadProfile(session.user.id);
-      } else {
+      if (session?.user?.id) loadProfile(session.user.id);
+      else setLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user?.id) loadProfile(session.user.id);
+      else {
+        setProfile(null);
         setCredits(null);
         setLoading(false);
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      syncSession(event, session);
-      (() => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          loadProfile(session.user.id);
-        } else {
-          setProfile(null);
-          setCredits(null);
-          setLoading(false);
-        }
-      })();
-    });
-
     return () => subscription.unsubscribe();
   }, []);
 
+  /** -------------------------
+   * LOAD PROFILE
+   --------------------------*/
   const loadProfile = async (userId: string) => {
     try {
-      // Récupérer la session pour accéder aux métadonnées JWT
-      const { data: { session } } = await supabase.auth.getSession();
-
-      // Essayer de charger le profil depuis la base de données
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
         .maybeSingle();
 
-      if (error) {
-        console.error('Error loading profile:', error);
+      if (data) setProfile(data);
 
-        // Si le profil n'existe pas mais qu'on a une session avec rôle admin dans JWT
-        if (session?.user.app_metadata?.role === 'admin') {
-          // Créer un profil temporaire à partir des métadonnées
-          setProfile({
-            id: userId,
-            email: session.user.email || '',
-            full_name: session.user.user_metadata?.name || 'Administrateur',
-            phone_number: session.user.user_metadata?.phone_number || null,
-            role: 'admin',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          });
-        }
-      } else if (data) {
-        // Si le profil existe, l'utiliser mais priorité au rôle du JWT si admin
-        setProfile({
-          ...data,
-          role: session?.user.app_metadata?.role === 'admin' ? 'admin' : data.role,
-        });
-      }
       await loadCredits(userId);
     } catch (error) {
-      console.error('Error loading profile:', error);
+      console.error("Error loading profile:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const refreshCredits = async () => {
-    if (user?.id) {
-      await loadCredits(user.id);
-    }
-  };
-
-  const signIn = async (email: string, password: string): Promise<AuthResponse> => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error, message: error?.message };
-  };
-
-  const signInWithGoogle = async (): Promise<AuthResponse> => {
-    const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/dashboard` : undefined;
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo,
-      },
+  /** -------------------------
+   * LOGIN PASSWORD
+   --------------------------*/
+  const signIn = async (
+    email: string,
+    password: string
+  ): Promise<AuthResponse> => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
     });
     return { error, message: error?.message };
   };
 
-  const signUp = async (email: string, password: string, fullName: string, phoneNumber: string): Promise<AuthResponse> => {
-    const emailRedirectTo = buildRedirectUrl('/login');
+  /** -------------------------
+   * LOGIN OTP
+   --------------------------*/
+  const signInWithOtp = async (email: string): Promise<AuthResponse> => {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: false,
+      },
+    });
+
+    return { error, message: error?.message };
+  };
+
+  /** -------------------------
+   * REGISTER + SEND OTP
+   --------------------------*/
+  const signUp = async (
+    email: string,
+    password: string,
+    fullName: string,
+    phoneNumber: string
+  ): Promise<AuthResponse> => {
+    // 1️⃣ Create user WITHOUT sending magic link
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
+        emailRedirectTo: undefined,
         data: {
           name: fullName,
-          phone_number: phoneNumber
+          full_name: fullName,
+          phone_number: phoneNumber,
         },
-        emailRedirectTo,
-      }
+      },
     });
 
-    if (!error && data.user) {
-      const now = new Date().toISOString();
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: data.user.id,
-          email,
-          full_name: fullName,
-          phone_number: phoneNumber || null,
-          role: 'client'
-        });
+    if (error) return { error, message: error.message };
 
-      if (!profileError) {
-        await supabase.from('credits').insert({
-          user_id: data.user.id,
-          total_credits: 10,
-          used_credits: 0,
-          last_reset_at: now,
-          updated_at: now,
-        });
+    // 2️⃣ Send OTP manually
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false },
+    });
 
-        await supabase.from('subscriptions').insert({
-          user_id: data.user.id,
-          plan_type: 'free',
-          status: 'active',
-          credits_limit: 10
-        });
-      }
+    if (!otpError) setUser(data.user!);
+
+    return {
+      error: otpError,
+      message: otpError
+        ? otpError.message
+        : "Un code OTP vous a été envoyé par email.",
+    };
+  };
+
+  /** -------------------------
+   * VERIFY OTP + CREATE PROFILE
+   --------------------------*/
+  const verifyOtp = async (
+    email: string,
+    token: string,
+    providedFullName?: string
+  ): Promise<AuthResponse> => {
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: "email",
+    });
+
+    if (error) return { error, message: error.message };
+
+    const user = data.user;
+    if (!user) return { error: true, message: "User not found after OTP." };
+
+    const now = new Date().toISOString();
+
+    // 1️⃣ Create or update profile safely
+    const resolvedFullName =
+      providedFullName?.trim() ||
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      user.email ||
+      undefined;
+
+    const profilePayload = {
+      id: user.id,
+      email: user.email!,
+      full_name: resolvedFullName,
+      phone_number: user.user_metadata?.phone_number ?? undefined,
+      role: "client",
+      created_at: now,
+      updated_at: now,
+    };
+    const { error: profileError } = await supabase.from("profiles").upsert(profilePayload);
+    if (profileError) {
+      console.error("Erreur upsert profile:", profileError);
+      return { error: profileError, message: profileError.message };
     }
+    setProfile({
+      id: user.id,
+      email: user.email!,
+      full_name: profilePayload.full_name ?? null,
+      phone_number: profilePayload.phone_number,
+      role: "client",
+      created_at: profilePayload.created_at,
+      updated_at: profilePayload.updated_at,
+    });
+
+    // 2️⃣ Credits
+    const creditsPayload = {
+      user_id: user.id,
+      total_credits: 3,
+      used_credits: 0,
+      last_reset_at: now,
+      created_at: now,
+      updated_at: now,
+    };
+    const { error: creditsError } = await supabase.from("credits").upsert(creditsPayload);
+    if (creditsError) {
+      console.error("Erreur upsert crédits:", creditsError);
+      return { error: creditsError, message: creditsError.message };
+    }
+    setCredits({
+      total: creditsPayload.total_credits,
+      used: creditsPayload.used_credits,
+      remaining: creditsPayload.total_credits - creditsPayload.used_credits,
+    });
+
+    // 3️⃣ Free subscription
+    const subscriptionPayload = {
+      user_id: user.id,
+      plan_type: "free",
+      status: "active",
+      credits_limit: 3,
+      started_at: now,
+      created_at: now,
+      updated_at: now,
+    };
+    const { error: subscriptionError } = await supabase.from("subscriptions").upsert(subscriptionPayload);
+    if (subscriptionError) {
+      console.error("Erreur upsert abonnement:", subscriptionError);
+      return { error: subscriptionError, message: subscriptionError.message };
+    }
+
+    setUser(user);
+
+    // 4️⃣ Redirect user
+    router.push("/dashboard");
+
+    return { error: null, message: "Compte vérifié." };
+  };
+
+  /** -------------------------
+   * GOOGLE LOGIN
+   --------------------------*/
+  const signInWithGoogle = async (): Promise<AuthResponse> => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo:
+          typeof window !== "undefined"
+            ? `${window.location.origin}/dashboard`
+            : undefined,
+      },
+    });
 
     return { error, message: error?.message };
   };
 
-  const sendPasswordReset = async (email: string): Promise<AuthResponse> => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-    if (!backendUrl) {
-      return { error: true, message: "Backend non configuré pour l'envoi d'emails." };
-    }
-
-    const endpoint = `${backendUrl.replace(/\/$/, '')}/auth/send-password-reset`;
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    const backendKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
-    if (backendKey) {
-      headers['x-backend-api-key'] = backendKey;
-    }
-
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ email }),
-      });
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        return {
-          error: data || true,
-          message:
-            data?.detail ||
-            data?.message ||
-            "Impossible d'envoyer le lien de réinitialisation.",
-        };
-      }
-
-      return {
-        error: null,
-        message: data?.message || 'Un email de réinitialisation a été envoyé.',
-      };
-    } catch (error) {
-      console.error('sendPasswordReset error:', error);
-      return {
-        error,
-        message: "Service de réinitialisation indisponible. Réessayez plus tard.",
-      };
-    }
+  /** -------------------------
+   * RESET PASSWORD
+   --------------------------*/
+  const sendPasswordReset = async (
+    email: string
+  ): Promise<AuthResponse> => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    return { error, message: error?.message };
   };
 
+  /** -------------------------
+   * LOGOUT
+   --------------------------*/
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
     setCredits(null);
-    router.push('/login');
+    router.push("/login");
   };
 
-  const value: AuthContextType = {
-    user,
-    profile,
-    credits,
-    loading,
-    signIn,
-    signInWithGoogle,
-    signUp,
-    sendPasswordReset,
-    refreshCredits,
-    signOut,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        profile,
+        credits,
+        loading,
+        signIn,
+        signInWithOtp,
+        verifyOtp,
+        signInWithGoogle,
+        signUp,
+        sendPasswordReset,
+        refreshCredits: async () => {},
+        signOut,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used in AuthProvider");
+  return ctx;
 }

@@ -21,10 +21,12 @@ type LocalizedPlan = {
   creditsLimit: number;
   popular?: boolean;
   name: string;
-  description: string;
+  description?: string;
   creditsLabel: string;
   period?: string;
   features: string[];
+  priceMonthly: string;
+  priceYearly: string;
 };
 
 export default function SubscriptionPage() {
@@ -56,6 +58,14 @@ export default function SubscriptionPage() {
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
   const paymentElementRef = useRef<HTMLDivElement | null>(null);
   const paymentElementInstance = useRef<any>(null);
+  const [billingInterval, setBillingInterval] = useState<'monthly' | 'annual'>('monthly');
+
+  const parsePriceValue = (price: string) => {
+    const match = price.match(/[\d.,]+/);
+    if (!match) return 0;
+    return parseFloat(match[0].replace(',', '.'));
+  };
+
   const planConfigs: LocalizedPlan[] = PLAN_DEFINITIONS.map((plan) => ({
     id: plan.id,
     icon: plan.icon,
@@ -63,10 +73,12 @@ export default function SubscriptionPage() {
     creditsLimit: plan.creditsLimit,
     popular: plan.popular,
     name: localize(plan.name.fr, plan.name.en),
-    description: localize(plan.description.fr, plan.description.en),
+    description: plan.description ? localize(plan.description.fr, plan.description.en) : undefined,
     creditsLabel: localize(plan.creditsLabel.fr, plan.creditsLabel.en),
     period: plan.period ? localize(plan.period.fr, plan.period.en) : undefined,
     features: plan.features.map((feature) => localize(feature.fr, feature.en)),
+    priceMonthly: `${parsePriceValue(plan.price)}€`,
+    priceYearly: `${Math.round(parsePriceValue(plan.price) * 12)}€`,
   }));
   const planNameMap = Object.fromEntries(planConfigs.map((plan) => [plan.id, plan.name]));
   const formatAmount = (amountCents?: number | null, currency?: string | null) => {
@@ -309,9 +321,36 @@ export default function SubscriptionPage() {
 
     setPaymentError(null);
     setStatusMessage(null);
-    setSelectedPlan(plan);
-    setPaymentDialogOpen(true);
+    startStripeCheckout(plan);
+
   };
+
+
+  const startStripeCheckout = async (plan: LocalizedPlan) => {
+  if (!user) return;
+
+  const response = await fetch('/api/stripe/checkout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      planId: plan.id,
+      userId: user.id,
+      email: user.email,
+      billingInterval,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data?.url) {
+    setStatusMessage({ type: 'error', text: 'Erreur Stripe.' });
+    return;
+  }
+
+  // 🚀 REDIRECTION VERS STRIPE CHECKOUT
+  window.location.href = data.url;
+};
+
 
   const syncSubscriptionCredits = async (paymentIntentId: string | undefined | null) => {
     if (!paymentIntentId || !user || !selectedPlan) {
@@ -573,52 +612,114 @@ export default function SubscriptionPage() {
         )}
 
         {subscription && (
-          <Card className="relative mx-auto max-w-3xl overflow-hidden border-none bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-xl">
-            <span className="absolute top-0 right-0 rounded-bl-md bg-blue-600 px-3 py-1 text-xs font-semibold uppercase">
-              {localize('Plan actuel', 'Current plan')}
-            </span>
-            <CardHeader className="space-y-2">
-              <CardTitle className="text-2xl font-semibold">
-                {localize('Abonnement', 'Plan')}{' '}
-                {planNameMap[subscription.plan_type as keyof typeof planNameMap] ??
-                  subscription.plan_type.charAt(0).toUpperCase() + subscription.plan_type.slice(1)}
-              </CardTitle>
-              <CardDescription className="text-slate-200/80">
-                {localize(
-                  'Gérez votre plan directement depuis cette page. Vous pouvez évoluer vers un plan supérieur à tout moment.',
-                  'Manage your plan directly from this page. You can upgrade at any time.'
-                )}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-6 md:grid-cols-3">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-300">{localize('Statut', 'Status')}</p>
-                <Badge className={`mt-2 border border-white/20 ${subscription.status === 'active' ? 'bg-emerald-500/20 text-emerald-100' : 'bg-white/10 text-white'}`}>
-                  {subscription.status === 'active' ? localize('Actif', 'Active') : subscription.status}
-                </Badge>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-300">
-                  {localize('Crédits mensuels', 'Monthly credits')}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card className="relative overflow-hidden border-none bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-xl">
+              <span className="absolute top-0 right-0 rounded-bl-md bg-blue-600 px-3 py-1 text-xs font-semibold uppercase">
+                {localize('Plan actuel', 'Current plan')}
+              </span>
+              <CardHeader className="space-y-2">
+                <CardTitle className="text-2xl font-semibold">
+                  {localize('Abonnement', 'Plan')}{' '}
+                  {planNameMap[subscription.plan_type as keyof typeof planNameMap] ??
+                    subscription.plan_type.charAt(0).toUpperCase() + subscription.plan_type.slice(1)}
+                </CardTitle>
+                <CardDescription className="text-slate-200/80">
+                  {localize(
+                    'Gérez votre plan directement depuis cette page. Vous pouvez évoluer vers un plan supérieur à tout moment.',
+                    'Manage your plan directly from this page. You can upgrade at any time.'
+                  )}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-6 md:grid-cols-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-300">{localize('Statut', 'Status')}</p>
+                  <Badge className={`mt-2 border border-white/20 ${subscription.status === 'active' ? 'bg-emerald-500/20 text-emerald-100' : 'bg-white/10 text-white'}`}>
+                    {subscription.status === 'active' ? localize('Actif', 'Active') : subscription.status}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-300">
+                    {localize('Crédits mensuels', 'Monthly credits')}
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-white">{subscription.credits_limit}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-300">
+                    {localize('Dernière mise à jour', 'Last update')}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-200">
+                    {subscription.updated_at ? new Date(subscription.updated_at).toLocaleDateString(locale) : '—'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gradient-to-br from-blue-50 to-white border-blue-200">
+              <CardHeader>
+                <CardTitle className="text-slate-900">
+                  {localize('Annulation et remboursement', 'Cancellation and refund')}
+                </CardTitle>
+                <CardDescription className="text-slate-600">
+                  {localize(
+                    'Arrêtez votre abonnement à tout moment et demandez un remboursement (selon les conditions).',
+                    'Stop your subscription anytime and request a refund (per policy).'
+                  )}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3 text-sm text-slate-700">
+                <p>
+                  {localize(
+                    'Pour annuler immédiatement votre abonnement, utilisez le bouton ci-dessous.',
+                    'To cancel your subscription immediately, use the button below.'
+                  )}
                 </p>
-                <p className="mt-2 text-2xl font-semibold text-white">{subscription.credits_limit}</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-300">
-                  {localize('Dernière mise à jour', 'Last update')}
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      handleSubscribe('free', 3, {
+                        successMessage: localize('Abonnement annulé.', 'Subscription cancelled.'),
+                      })
+                    }
+                  >
+                    {localize('Annuler et passer en Free', 'Cancel and switch to Free')}
+                  </Button>
+                  <Button asChild variant="secondary">
+                    <a href="mailto:support@cyberscan.com?subject=Refund%20request">
+                      {localize('Demander un remboursement', 'Request a refund')}
+                    </a>
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-500">
+                  {localize(
+                    'Les remboursements sont traités par le support après vérification (prorata possible selon la consommation de crédits).',
+                    'Refunds are handled by support after review (proration may apply depending on credits used).'
+                  )}
                 </p>
-                <p className="mt-2 text-sm text-slate-200">
-                  {subscription.updated_at ? new Date(subscription.updated_at).toLocaleDateString(locale) : '—'}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         )}
 
-        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 justify-items-center">
-          {planConfigs
-            .filter((plan) => plan.id !== 'enterprise')
-            .map((plan) => {
+        <div className="flex items-center justify-center gap-3">
+          <Button
+            variant={billingInterval === 'monthly' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setBillingInterval('monthly')}
+          >
+            {localize('Mensuel', 'Monthly')}
+          </Button>
+          <Button
+            variant={billingInterval === 'annual' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setBillingInterval('annual')}
+          >
+            {localize('Annuel', 'Annual')}
+          </Button>
+        </div>
+
+        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4 justify-items-center">
+          {planConfigs.map((plan) => {
             const Icon = plan.icon;
             const isCurrentPlan = subscription?.plan_type === plan.id;
             const isEnterprise = plan.id === 'enterprise';
@@ -649,15 +750,18 @@ export default function SubscriptionPage() {
                     </div>
                   </div>
                   <CardTitle className="text-center text-xl">{plan.name}</CardTitle>
-                  <CardDescription className="text-center min-h-[48px]">
-                    {plan.description}
-                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="text-center">
                     <div className="flex items-baseline justify-center">
-                      <span className="text-4xl font-bold text-slate-900">{plan.price}</span>
-                      {plan.period && <span className="text-slate-600 ml-1">{plan.period}</span>}
+                      <span className="text-4xl font-bold text-slate-900">
+                        {billingInterval === 'annual' ? plan.priceYearly : plan.priceMonthly}
+                      </span>
+                      <span className="text-slate-600 ml-1">
+                        {billingInterval === 'annual'
+                          ? localize('/an', '/year')
+                          : localize('/mois', '/month')}
+                      </span>
                     </div>
                     <p className="text-sm text-slate-600 mt-1">
                       {plan.creditsLabel} {localize('crédits/mois', 'credits/month')}
@@ -704,6 +808,39 @@ export default function SubscriptionPage() {
             );
           })}
         </div>
+
+        <Card className="mx-auto max-w-4xl bg-gradient-to-br from-blue-50 to-white border-blue-200">
+          <CardHeader>
+            <CardTitle className="text-slate-900">
+              {localize('WHITE LABEL — Sur demande', 'WHITE LABEL — On request')}
+            </CardTitle>
+            <CardDescription className="text-slate-600">
+              {localize(
+                '(Option supplémentaire non incluse dans les plans, activation via support)',
+                '(Extra option not included in plans, activation via support)'
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <ul className="space-y-2 text-slate-800">
+              {[
+                localize('Ajout du logo du client', 'Add your client logo'),
+                localize('Dashboard personnalisé (couleurs & branding)', 'Custom dashboard (colors & branding)'),
+                localize('Rapports PDF brandés', 'Branded PDF reports'),
+                localize('Domaine personnalisé (ex : scan.votredomaine.com)', 'Custom domain (e.g., scan.yourdomain.com)'),
+                localize('Solution idéale pour agences & MSSP', 'Ideal for agencies & MSSPs'),
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <Check className="w-4 h-4 text-green-600 mt-0.5" />
+                  <span className="text-sm">{item}</span>
+                </li>
+              ))}
+            </ul>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white" asChild>
+              <a href="mailto:support@cyberscan.com">{localize('Contacter le support', 'Contact support')}</a>
+            </Button>
+          </CardContent>
+        </Card>
 
         <Card className="mx-auto max-w-4xl">
           <CardHeader>
@@ -830,8 +967,14 @@ export default function SubscriptionPage() {
                   <p className="text-base font-semibold text-slate-900">{selectedPlan.name}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-bold text-slate-900">{selectedPlan.price}</p>
-                  {selectedPlan.period && <p className="text-xs text-slate-500">{selectedPlan.period}</p>}
+                  <p className="text-2xl font-bold text-slate-900">
+                    {billingInterval === 'annual' ? selectedPlan.priceYearly : selectedPlan.priceMonthly}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {billingInterval === 'annual'
+                      ? localize('/an', '/year')
+                      : localize('/mois', '/month')}
+                  </p>
                 </div>
               </div>
             </div>

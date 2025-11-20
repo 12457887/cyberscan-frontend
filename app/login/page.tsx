@@ -8,20 +8,29 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import Link from 'next/link';
+import { Logo } from '@/components/Logo';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [otpLoading, setOtpLoading] = useState(false);
   const [error, setError] = useState('');
   const [oauthLoading, setOauthLoading] = useState(false);
-  const { signIn, signInWithGoogle } = useAuth();
+
+  const { signIn, signInWithGoogle, signInWithOtp, verifyOtp } = useAuth();
   const router = useRouter();
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
 
+  /** ----------------------------------------
+   * LOGIN PASSWORD HANDLER
+   ---------------------------------------- */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -37,18 +46,57 @@ export default function LoginPage() {
     }
   };
 
+  /** ----------------------------------------
+   * SEND OTP
+   ---------------------------------------- */
+  const handleSendOtp = async () => {
+    setError('');
+    setOtp('');
+    setOtpLoading(true);
+    const { error } = await signInWithOtp(email);
+
+    if (error) {
+      setError(error.message || localize("Erreur lors de l'envoi du code", 'Error while sending code'));
+    } else {
+      setOtpSent(true);
+    }
+
+    setOtpLoading(false);
+  };
+
+  /** ----------------------------------------
+   * VERIFY OTP
+   ---------------------------------------- */
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    const { error } = await verifyOtp(email, otp);
+
+    if (error) {
+      setError(error.message || localize('Code invalide', 'Invalid code'));
+      setLoading(false);
+      return;
+    }
+
+    router.push('/dashboard');
+  };
+
+  /** ----------------------------------------
+   * GOOGLE SIGN-IN
+   ---------------------------------------- */
   const handleGoogleSignIn = async () => {
     setError('');
     setOauthLoading(true);
     const { error } = await signInWithGoogle();
+
     if (error) {
       const message =
         error.message && error.message.includes('provider is not enabled')
-          ? localize(
-              "La connexion Google n'est pas encore activée. Contactez un administrateur.",
-              'Google sign-in is not enabled yet. Please contact an administrator.'
-            )
-          : error.message || localize('Erreur lors de la connexion Google', 'Error while signing in with Google');
+          ? localize("La connexion Google n'est pas encore activée.", 'Google sign-in not enabled.')
+          : error.message || localize('Erreur lors de la connexion Google', 'Google login error');
+
       setError(message);
       setOauthLoading(false);
     }
@@ -56,20 +104,26 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-4 text-center">
-          <div className="mx-auto w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
-            <Shield className="w-7 h-7 text-white" />
-          </div>
-          <div>
-            <CardTitle className="text-2xl font-bold">CyberScan</CardTitle>
-            <CardDescription>
-              {localize('Connexion à votre compte', 'Sign in to your account')}
-            </CardDescription>
-          </div>
+      <Card className="w-full max-w-md shadow-xl">
+        
+        {/* ---------------------------- */}
+        {/* HEADER */}
+        {/* ---------------------------- */}
+        <CardHeader className="text-center space-y-3">
+          <Logo width={150} height={150} />
+
+          <CardDescription className="text-muted-foreground">
+            {localize('Connexion à votre compte', 'Sign in to your account')}
+          </CardDescription>
         </CardHeader>
+
+        {/* ---------------------------- */}
+        {/* CONTENT */}
+        {/* ---------------------------- */}
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={otpSent ? handleVerifyOtp : handleSubmit} className="space-y-4">
+            
+            {/* EMAIL */}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -79,39 +133,81 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                disabled={otpSent || loading || otpLoading}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">{localize('Mot de passe', 'Password')}</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
+
+            {/* PASSWORD */}
+            {!otpSent && (
+              <div className="space-y-2">
+                <Label htmlFor="password">{localize('Mot de passe', 'Password')}</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                />
+              </div>
+            )}
+
+            {/* OTP */}
+            {otpSent && (
+              <div className="space-y-2">
+                <Label>{localize('Code reçu par email', 'Code received by email')}</Label>
+
+                <InputOTP maxLength={6} value={otp} onChange={setOtp} containerClassName="justify-center">
+                  <InputOTPGroup>
+                    {Array.from({ length: 6 }).map((_, index) => (
+                      <InputOTPSlot key={index} index={index} />
+                    ))}
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+            )}
+
+            {/* FORGOT PASSWORD */}
             <div className="text-right text-sm">
               <Link href="/forgot-password" className="text-blue-600 hover:underline font-medium">
                 {localize('Mot de passe oublié ?', 'Forgot password?')}
               </Link>
             </div>
+
+            {/* ERROR */}
             {error && (
               <div className="text-sm text-red-600 bg-red-50 p-3 rounded-md">
                 {error}
               </div>
             )}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {localize('Connexion...', 'Signing in...')}
-                </>
-              ) : (
-                localize('Se connecter', 'Sign in')
-              )}
-            </Button>
+
+            {/* BUTTON */}
+            {!otpSent ? (
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {localize('Connexion...', 'Signing in...')}
+                  </>
+                ) : (
+                  localize('Se connecter', 'Sign in')
+                )}
+              </Button>
+            ) : (
+              <Button type="submit" className="w-full" disabled={loading || otp.length !== 6}>
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {localize('Vérification...', 'Verifying...')}
+                  </>
+                ) : (
+                  localize('Valider le code', 'Confirm code')
+                )}
+              </Button>
+            )}
+
+            {/* DIVIDER */}
             <div className="relative py-2">
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t border-slate-200" />
@@ -120,28 +216,10 @@ export default function LoginPage() {
                 <span className="bg-white px-2 text-slate-500">{localize('ou', 'or')}</span>
               </div>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={handleGoogleSignIn}
-              disabled={oauthLoading}
-            >
-              {oauthLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {localize('Connexion...', 'Signing in...')}
-                </>
-              ) : (
-                <>
-                  <span className="mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-bold text-red-500">
-                    G
-                  </span>
-                  {localize('Continuer avec Google', 'Continue with Google')}
-                </>
-              )}
-            </Button>
+
           </form>
+
+          {/* SIGN UP LINK */}
           <div className="mt-6 text-center text-sm">
             <span className="text-slate-600">{localize('Pas encore de compte ?', 'No account yet?')}</span>{' '}
             <Link href="/register" className="text-blue-600 hover:underline font-medium">

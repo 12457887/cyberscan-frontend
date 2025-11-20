@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { Users, Activity, CreditCard, TrendingUp, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Link from 'next/link';
 
 interface AdminUser {
   id: string;
@@ -143,9 +144,14 @@ const handleDeleteUser = async (userId: string) => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">{localize('Administration', 'Administration')}</h1>
-          <p className="text-slate-600 mt-1">{localize("Vue d'ensemble de la plateforme", 'Platform overview')}</p>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">{localize('Administration', 'Administration')}</h1>
+            <p className="text-slate-600 mt-1">{localize("Vue d'ensemble de la plateforme", 'Platform overview')}</p>
+          </div>
+          <Button asChild variant="outline">
+            <Link href="/admin/logs">{localize('Voir les logs de scans', 'View scan logs')}</Link>
+          </Button>
         </div>
 
         {error && (

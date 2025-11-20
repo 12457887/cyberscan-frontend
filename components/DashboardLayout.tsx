@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { Shield, Home, Scan, FileText, CreditCard, User, Bell, LogOut, Menu, X, Settings, Zap, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
+import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useSubscriptionPlan } from '@/hooks/use-subscription-plan';
@@ -30,6 +31,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { plan } = useSubscriptionPlan();
   const { t, language, setLanguage, choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
+  console.log('[DashboardLayout] profile role:', profile?.role, 'plan:', plan);
   const planLabel = useMemo(() => {
     if (!plan) {
       return null;
@@ -54,14 +56,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       : t('header.creditsUnavailable');
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <Shield className="w-12 h-12 text-blue-600 mx-auto mb-4 animate-pulse" />
-          <p className="text-slate-600">{t('common.loading')}</p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   if (!user) {
@@ -107,9 +102,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
-              <div className="flex-shrink-0 flex items-center">
-                <Shield className="w-8 h-8 text-blue-600" />
-                <span className="ml-2 text-xl font-bold text-slate-900">{t('common.appName')}</span>
+              <div className="flex-shrink-0 flex items-center gap-3">
+                <Logo width={56} height={56} className="!justify-start" />
+                <span className="text-xl font-bold text-slate-900">{t('common.appName')}</span>
               </div>
             </div>
 

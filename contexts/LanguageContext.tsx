@@ -34,7 +34,7 @@ const getNestedValue = (obj: Record<string, unknown>, path: string): unknown => 
 };
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguageState] = useState<Language>('fr');
+  const [language, setLanguageState] = useState<Language>('en');
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -43,6 +43,8 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     if (stored === 'fr' || stored === 'en') {
       setLanguageState(stored);
+    } else {
+      setLanguageState('en');
     }
   }, []);
 

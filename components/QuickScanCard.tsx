@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, CheckCircle2, Globe, Lock, Loader2, ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
 
 type Severity = 'low' | 'medium' | 'high' | 'critical';
 
@@ -245,7 +246,7 @@ export function QuickScanCard() {
           <Input
             type="url"
             className="h-12 flex-1"
-            placeholder="https://votre-site.com"
+            placeholder={localize('https://votre-site.com', 'https://your-site.com')}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             disabled={loading}
@@ -272,8 +273,39 @@ export function QuickScanCard() {
             <Lock className="w-4 h-4" />
             {localize('Analyse 100% gratuite et confidentielle', '100% free and confidential analysis')}
           </div>
-         
         </div>
+
+        <div className="flex items-start gap-2 text-[11px] leading-snug text-slate-500">
+          <ShieldCheck className="w-4 h-4 mt-0.5" />
+          <p>
+            {localize("Je déclare que ", 'I declare that ')}
+            <span className="italic font-semibold">
+              {localize(
+                "j'ai l'autorisation de scanner ce domaine et que j'accepte les ",
+                'I have permission to scan this domain and that I agree with the '
+              )}
+            </span>
+            <Link href="/conditions-generales" className="text-blue-600 hover:text-blue-500 font-medium">
+              {localize("Conditions d'utilisation", 'Terms of Use')}
+            </Link>
+            <span className="italic font-semibold">.</span>
+          </p>
+        </div>
+
+        {loading && (
+          <div className="rounded-2xl border border-blue-100 bg-white/90 shadow-inner p-6 text-center space-y-3">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
+            <p className="text-sm font-semibold text-slate-800">
+              {localize('Analyse en cours…', 'Scan in progress…')}
+            </p>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              {localize(
+                'Merci de patienter pendant que nous collectons les données de sécurité. Cette étape peut prendre jusqu’à une minute.',
+                'Please wait while we collect security signals. This may take up to a minute.'
+              )}
+            </p>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">

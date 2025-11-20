@@ -9,18 +9,21 @@ export async function POST(req: Request) {
       (process.env.NODE_ENV !== 'production' ? 'http://localhost:8000' : undefined) ||
       process.env.NEXT_PUBLIC_BACKEND_URL ||
       'http://localhost:8000';
-    const body = await req.text();
 
+    const body = await req.text();
     const cookieStore = cookies();
+
     const accessToken = cookieStore.get('sb-access-token')?.value;
     let csrfToken = cookieStore.get('csrf-token')?.value;
     let shouldSetCsrfCookie = false;
 
+    // Générer CSRF si absent
     if (!csrfToken) {
       csrfToken = randomBytes(32).toString('hex');
       shouldSetCsrfCookie = true;
     }
 
+    // --- HEADERS ---
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
@@ -30,29 +33,37 @@ export async function POST(req: Request) {
     if (accessToken) {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
+    const backendKey = process.env.BACKEND_API_KEY || process.env.NEXT_PUBLIC_BACKEND_API_KEY;
+    if (backendKey) {
+      headers['x-backend-api-key'] = backendKey;
+    }
 
-    const incomingCookies = req.headers.get('cookie');
-    const csrfCookie = `csrf-token=${csrfToken}`;
-    headers['Cookie'] = incomingCookies ? `${csrfCookie}; ${incomingCookies}` : csrfCookie;
+    // --- COOKIES (❗CORRIGÉ) ---
+    const incomingCookies = req.headers.get('cookie') || "";
 
-    let targetPath = '/stripe/create-checkout';
+    const proxyCookies = [
+      `csrf-token=${csrfToken}`,
+      accessToken ? `sb-access-token=${accessToken}` : null,
+    ]
+      .filter(Boolean)
+      .join('; ');
+
+    headers['Cookie'] = [proxyCookies, incomingCookies].filter(Boolean).join('; ');
+
+    // --- Route Stripe ---
+    let targetPath = '/stripe/create-checkout-subscription';
     let forwardBody = body;
 
     try {
       const parsed = body ? JSON.parse(body) : null;
-      if (parsed && parsed.checkoutMode === 'embedded') {
-        targetPath = '/stripe/create-subscription-intent';
-        delete parsed.checkoutMode;
-        forwardBody = JSON.stringify(parsed);
-      } else if (parsed && parsed.action === 'sync-subscription') {
+      if (parsed?.action === 'sync-subscription') {
         targetPath = '/stripe/sync-subscription';
         delete parsed.action;
         forwardBody = JSON.stringify(parsed);
       }
-    } catch (error) {
-      console.warn('Impossible de parser le corps de la requête Stripe:', error);
-    }
+    } catch (e) {}
 
+    // --- ENVOI BACKEND ---
     const res = await fetch(`${backendUrl}${targetPath}`, {
       method: 'POST',
       headers,
@@ -60,6 +71,7 @@ export async function POST(req: Request) {
     });
 
     const payload = await res.text();
+
     const response = new NextResponse(payload, {
       status: res.status,
       headers: {
@@ -67,13 +79,14 @@ export async function POST(req: Request) {
       },
     });
 
+    // Set CSRF cookie if missing
     if (shouldSetCsrfCookie) {
       response.cookies.set('csrf-token', csrfToken, {
         httpOnly: false,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict',
         path: '/',
-        maxAge: 60 * 60, // 1 hour
+        maxAge: 60 * 60,
       });
     }
 
