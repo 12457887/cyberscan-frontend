@@ -1,4 +1,5 @@
 // Proxy GET /api/admin/scan-logs -> backend /admin/scan-logs
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   try {
