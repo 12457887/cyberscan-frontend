@@ -90,7 +90,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
             <div className="flex items-center gap-2">
-              <Logo width={48} height={48} className="!justify-start" />
+              <Logo width={72} height={72} className="!justify-start" />
               <span className="text-xl font-bold text-white">CyberScan</span>
             </div>
             <div className="flex gap-3 items-center">
@@ -428,7 +428,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 py-12 space-y-8">
           <div className="grid gap-6 md:grid-cols-3">
             <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6 shadow-lg">
-              <Logo width={80} height={80} className="mb-2" />
+              <Logo width={96} height={96} className="mb-2 !justify-start" />
               <p className="text-slate-300 mt-3">
               </p>
               <div className="mt-4 space-y-1 text-sm text-slate-400">

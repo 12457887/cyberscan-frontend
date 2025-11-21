@@ -12,7 +12,7 @@ export function Logo({ width = 170, height = 170, className = '' }: LogoProps) {
   return (
     <div className={`flex justify-center items-center ${className}`.trim()}>
       <Image
-        src="/cyberscan-logo.png"
+        src="/dark_logo.png"
         alt="CyberScan Logo"
         width={width}
         height={height}
