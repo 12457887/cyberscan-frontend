@@ -17,6 +17,23 @@ export default function Home() {
   const targetStats = { totalScans: 12840, totalSites: 6420 };
   const [publicStats, setPublicStats] = useState({ totalScans: 0, totalSites: 0 });
   const [statsLoading, setStatsLoading] = useState(false);
+  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+
+  useEffect(() => {
+    const target = new Date(`${new Date().getFullYear()}-11-28T23:59:59`);
+    const tick = () => {
+      const now = new Date();
+      const diff = Math.max(0, target.getTime() - now.getTime());
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((diff / (1000 * 60)) % 60);
+      const seconds = Math.floor((diff / 1000) % 60);
+      setTimeLeft({ days, hours, minutes, seconds });
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     // 🎛️ Animate numbers from 0 up to fixed targets on page load
@@ -112,6 +129,48 @@ export default function Home() {
         </div>
       </nav>
 
+      <section className="bg-gradient-to-r from-indigo-700 via-purple-700 to-pink-600 text-white px-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div>
+              <p className="uppercase text-xs tracking-[0.3em] text-white/70">Black Friday</p>
+              <h2 className="text-3xl font-bold mt-2">
+                {localize('Offre limitée : -40% sur les plans Pro & Enterprise', 'Limited offer: 50% off  plans')}
+              </h2>
+              <p className="mt-3 text-white/80">
+                {localize('Crédits bonus et onboarding prioritaire durant la période Black Friday.', 'Bonus credits and priority onboarding during Black Friday.')}
+              </p>
+            </div>
+            <Button size="lg" className="bg-white text-slate-900 hover:bg-white/90" asChild>
+              <Link href="/plans">
+                {localize('Profiter de la promotion', 'Claim the deal')}
+              </Link>
+            </Button>
+          </div>
+          <div className="bg-white/10 border border-white/20 rounded-2xl p-4 flex flex-col gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full">
+              {[
+                { label: localize('Jours', 'Days'), value: timeLeft.days },
+                { label: localize('Heures', 'Hours'), value: timeLeft.hours },
+                { label: localize('Minutes', 'Minutes'), value: timeLeft.minutes },
+                { label: localize('Secondes', 'Seconds'), value: timeLeft.seconds },
+              ].map((item) => (
+                <div key={item.label} className="bg-slate-900/40 rounded-xl p-4 text-center">
+                  <div className="text-3xl font-bold">{String(item.value).padStart(2, '0')}</div>
+                  <div className="text-xs uppercase tracking-wide text-white/70">{item.label}</div>
+                </div>
+              ))}
+            </div>
+            <div className="h-1 rounded-full bg-slate-900/50 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-pink-500 via-purple-400 to-blue-400"
+                style={{ width: `${Math.min(100, (timeLeft.seconds / 60) * 100)}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <main>
         <section className="py-20 px-4">
           <div className="max-w-7xl mx-auto text-center">
@@ -149,8 +208,8 @@ export default function Home() {
             <div className="max-w-3xl mx-auto mt-10">
               <QuickScanCard />
             </div>
-          </div>
-        </section>
+      </div>
+    </section>
 
         <section id="benefits" className="py-12 px-4 scroll-mt-20 bg-white text-slate-900">
           <div className="max-w-7xl mx-auto">
