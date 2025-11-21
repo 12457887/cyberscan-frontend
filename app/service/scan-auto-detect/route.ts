@@ -1,7 +1,7 @@
-// Proxy route: forwards POST /api/scan-auto to the backend FastAPI service
+// Proxy route: forwards POST /service/scan-auto to the backend FastAPI service
 // The backend URL can be configured with the BACKEND_URL env var (defaults to http://localhost:8000)
 
-// Proxy route: forwards POST /api/scan-auto-detect to the backend FastAPI service
+// Proxy route: forwards POST /service/scan-auto-detect to the backend FastAPI service
 // The backend URL can be configured with BACKEND_URL (defaults to http://localhost:8000)
 
 export async function POST(req: Request) {

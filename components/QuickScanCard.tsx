@@ -149,14 +149,14 @@ export function QuickScanCard() {
         },
       ];
 
-      const analyzerPromise = fetch(`/api/analyzer/analyze/${encodeURIComponent(analyzerDomain)}`)
+      const analyzerPromise = fetch(`/service/analyzer/analyze/${encodeURIComponent(analyzerDomain)}`)
         .then(async (res) => {
           if (!res.ok) return null;
           return (await res.json()) as AnalyzerResult;
         })
         .catch(() => null);
 
-      const response = await fetch('/api/scan-auto-detect', {
+      const response = await fetch('/service/scan-auto-detect', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

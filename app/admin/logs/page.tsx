@@ -69,7 +69,7 @@ export default function AdminLogsPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       const query = buildQuery();
-      const res = await fetch(`/api/admin/scan-logs${query ? `?${query}` : ''}`, {
+      const res = await fetch(`/service/admin/scan-logs${query ? `?${query}` : ''}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         cache: 'no-store',
       });

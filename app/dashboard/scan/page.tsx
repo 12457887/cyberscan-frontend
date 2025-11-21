@@ -25,8 +25,43 @@ const PLAN_CONCURRENCY: Record<string, number> = {
   enterprise: 10,
 };
 
+const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
+const FINISHED_STATUSES = new Set(['completed', 'failed']);
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitForScanCompletion(scanIds: Array<string | number>, maxAttempts = 60, intervalMs = 5000) {
+  if (!scanIds.length) return 0;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const { data, error } = await supabase
+      .from('scans')
+      .select('id, status')
+      .in('id', scanIds);
+
+    if (error) {
+      console.error('Erreur vérification statut des scans:', error);
+      return 0;
+    }
+
+    const rows = (data as Array<{ id: string | number; status: string | null }>) || [];
+    if (!rows.length) {
+      return 0;
+    }
+
+    const hasActive = rows.some((row) => !row.status || ACTIVE_STATUSES.has(row.status));
+    if (!hasActive) {
+      return rows.filter((row) => row.status && FINISHED_STATUSES.has(row.status)).length;
+    }
+
+    await sleep(intervalMs);
+  }
+
+  console.warn('Temps dépassé en attendant la fin des scans:', scanIds);
+  return 0;
+}
+
 export default function ScanPage() {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshCredits } = useAuth();
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const planNames = useMemo(
@@ -56,6 +91,49 @@ export default function ScanPage() {
   const [scheduleFrequency, setScheduleFrequency] = useState<'none' | 'weekly' | 'monthly'>('none');
   const [scheduleStartAt, setScheduleStartAt] = useState('');
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const trackCreditConsumption = (scanIds: Array<string | number>) => {
+    if (!user?.id || scanIds.length === 0) {
+      return;
+    }
+
+    (async () => {
+      const finishedCount = await waitForScanCompletion(scanIds);
+      if (!finishedCount) {
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('credits')
+        .select('used_credits, total_credits')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Erreur lecture crédits post-scan:', error);
+        return;
+      }
+
+      const currentUsed = data?.used_credits ?? 0;
+      const newUsed = currentUsed + finishedCount;
+      const updatePayload: Record<string, any> = {
+        used_credits: newUsed,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error: updateError } = await supabase
+        .from('credits')
+        .update(updatePayload)
+        .eq('user_id', user.id);
+
+      if (updateError) {
+        console.error('Erreur mise à jour crédits post-scan:', updateError);
+      } else if (typeof refreshCredits === 'function') {
+        refreshCredits().catch((err) => console.error('Erreur refresh credits:', err));
+      }
+    })().catch((err) => {
+      console.error('Erreur suivi des crédits:', err);
+    });
+  };
 
   const startProgress = () => {
     if (progressIntervalRef.current) {
@@ -221,16 +299,16 @@ export default function ScanPage() {
         }
       }
 
-      let creditsData = { remaining_credits: 0, used_credits: 0 };
+      let creditsData = { remaining_credits: 0, used_credits: 0, total_credits: 0 };
 
       if (!DISABLE_CREDIT_CHECK) {
         const { data } = await supabase
           .from('credits')
-          .select('remaining_credits, used_credits')
+          .select('remaining_credits, used_credits, total_credits')
           .eq('user_id', user.id)
           .maybeSingle();
 
-        creditsData = data || { remaining_credits: 0, used_credits: 0 };
+        creditsData = data || { remaining_credits: 0, used_credits: 0, total_credits: 0 };
 
         if (!creditsData || (creditsData.remaining_credits || 0) < normalizedUrls.length) {
           setError(localize('Crédits insuffisants pour lancer cette série de scans.', 'Not enough credits to launch this batch of scans.'));
@@ -256,16 +334,6 @@ export default function ScanPage() {
 
       if (scanError || !scanRows || scanRows.length === 0) {
         throw scanError || new Error(localize('Impossible de créer les enregistrements de scan.', 'Unable to create scan records.'));
-      }
-
-      if (!DISABLE_CREDIT_CHECK) {
-        await supabase
-          .from('credits')
-          .update({
-            used_credits: (creditsData.used_credits || 0) + normalizedUrls.length,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('user_id', user.id);
       }
 
       await supabase.from('alerts').insert(
@@ -359,6 +427,11 @@ export default function ScanPage() {
               .eq('id', scanId)
           )
         );
+      }
+
+      if (!DISABLE_CREDIT_CHECK) {
+        const scanIds = scanRows.map((row) => row.id).filter(Boolean);
+        trackCreditConsumption(scanIds);
       }
 
       stopProgress(true);

@@ -5,6 +5,8 @@ import Link from 'next/link';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useSubscriptionPlan } from '@/hooks/use-subscription-plan';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import {
   Card,
   CardContent,
@@ -44,6 +46,7 @@ const STORAGE_KEY = 'cyberscan-detection-history';
 const MAX_HISTORY_ITEMS = 50;
 const MAX_URLS = 10;
 const UNKNOWN_CMS_FALLBACK = 'unknown';
+const DISABLE_CREDIT_CHECK = process.env.NEXT_PUBLIC_DISABLE_CREDITS === 'true';
 
 export default function DashboardDetectionPage() {
   const [input, setInput] = useState('');
@@ -52,12 +55,77 @@ export default function DashboardDetectionPage() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const { plan, loading: planLoading } = useSubscriptionPlan();
+  const { user, refreshCredits } = useAuth();
   const { t, language } = useLanguage();
   const locale = language === 'fr' ? 'fr-FR' : 'en-US';
   const planLabel = useMemo(() => {
     const key = plan ? `plans.${plan}` : 'plans.unknown';
     return t(key);
   }, [plan, t]);
+
+  const ensureCreditsAvailable = async (count: number) => {
+    if (DISABLE_CREDIT_CHECK || count <= 0) return true;
+    if (!user?.id) {
+      setError(language === 'fr' ? 'Vous devez être connecté pour utiliser vos crédits.' : 'You must be logged in to use credits.');
+      return false;
+    }
+
+    const { data, error } = await supabase
+      .from('credits')
+      .select('total_credits, used_credits')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erreur lecture crédits détection:', error);
+      setError(language === 'fr' ? 'Impossible de vérifier vos crédits.' : 'Unable to verify your credits.');
+      return false;
+    }
+
+    const total = data?.total_credits ?? 0;
+    const used = data?.used_credits ?? 0;
+    const remaining = total - used;
+
+    if (remaining < count) {
+      setError(language === 'fr' ? 'Crédits insuffisants pour lancer ces détections.' : 'Not enough credits to start these detections.');
+      return false;
+    }
+
+    return true;
+  };
+
+  const consumeCredits = async (count: number) => {
+    if (DISABLE_CREDIT_CHECK || count <= 0 || !user?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from('credits')
+        .select('used_credits')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Erreur lecture crédits après détection:', error);
+        return;
+      }
+
+      const currentUsed = data?.used_credits ?? 0;
+      const { error: updateError } = await supabase
+        .from('credits')
+        .update({
+          used_credits: currentUsed + count,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id);
+
+      if (updateError) {
+        console.error('Erreur mise à jour crédits après détection:', updateError);
+      } else if (typeof refreshCredits === 'function') {
+        refreshCredits().catch((err) => console.error('Erreur refresh credits detection:', err));
+      }
+    } catch (err) {
+      console.error('Erreur consommation crédits détection:', err);
+    }
+  };
 
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -150,6 +218,12 @@ export default function DashboardDetectionPage() {
       return;
     }
 
+    const plannedUsage = urls.length;
+    const hasCredits = await ensureCreditsAvailable(plannedUsage);
+    if (!hasCredits) {
+      return;
+    }
+
     setIsDetecting(true);
     try {
       const res = await fetch('/api/predict', {
@@ -166,6 +240,7 @@ export default function DashboardDetectionPage() {
       const data = await res.json();
       const detectionResults: PredictResult[] = data.resultats || [];
       setResults(detectionResults);
+      await consumeCredits(plannedUsage);
 
       const timestamp = Date.now();
       const successEntries = detectionResults

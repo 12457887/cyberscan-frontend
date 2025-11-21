@@ -227,7 +227,7 @@ export default function DashboardPage() {
 
           const token = session?.access_token;
           if (token) {
-            const res = await fetch('/api/admin?resource=tickets', {
+            const res = await fetch('/service/admin?resource=tickets', {
               headers: {
                 Authorization: `Bearer ${token}`,
               },

@@ -1,4 +1,4 @@
-// app/api/generate-report/[id]/route.ts
+// app/service/generate-report/[id]/route.ts
 
 export async function GET(
   req: Request,

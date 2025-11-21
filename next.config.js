@@ -10,6 +10,10 @@ const nextConfig = {
         source: '/dashboard/support',
         destination: '/dashboard?section=support',
       },
+      {
+        source: '/api/:path*',
+        destination: '/service/:path*',
+      },
     ];
   },
 };

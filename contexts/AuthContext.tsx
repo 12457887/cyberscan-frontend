@@ -71,6 +71,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const refreshCredits = async () => {
+    if (!user?.id) return;
+    await loadCredits(user.id);
+  };
+
   /** -------------------------
    * INIT SESSION
    --------------------------*/
@@ -334,7 +339,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signInWithGoogle,
         signUp,
         sendPasswordReset,
-        refreshCredits: async () => {},
+        refreshCredits,
         signOut,
       }}
     >

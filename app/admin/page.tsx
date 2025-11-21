@@ -8,8 +8,9 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
-import { Users, Activity, CreditCard, TrendingUp, Trash2 } from 'lucide-react';
+import { Users, Activity, CreditCard, TrendingUp, Trash2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 
 interface AdminUser {
@@ -47,6 +48,10 @@ export default function AdminDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [creditUserId, setCreditUserId] = useState('');
+  const [creditAmount, setCreditAmount] = useState('10');
+  const [creditFeedback, setCreditFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [creditLoading, setCreditLoading] = useState(false);
 
   // 🔐 Vérification du rôle admin
   useEffect(() => {
@@ -106,7 +111,7 @@ const handleDeleteUser = async (userId: string) => {
 
   const token = (await supabase.auth.getSession()).data.session?.access_token;
 
-  const res = await fetch("/api/admin/delete-user", {
+  const res = await fetch("/service/admin/delete-user", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -123,6 +128,57 @@ const handleDeleteUser = async (userId: string) => {
   alert('✅ ' + localize('Utilisateur supprimé !', 'User deleted!'));
   loadAdminData();
 };
+
+  const handleCreditSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setCreditFeedback(null);
+    const amountValue = Number(creditAmount);
+    if (!creditUserId || !Number.isFinite(amountValue) || amountValue <= 0) {
+      setCreditFeedback({
+        type: 'error',
+        message: localize('Sélectionnez un utilisateur et un montant valide.', 'Select a user and a valid amount.'),
+      });
+      return;
+    }
+
+    try {
+      setCreditLoading(true);
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (!token) {
+        throw new Error(localize('Session expirée, reconnectez-vous.', 'Session expired, please log in again.'));
+      }
+
+      const res = await fetch('/service/admin/credits', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ user_id: creditUserId, amount: amountValue }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || localize('Impossible de mettre à jour les crédits.', 'Unable to update credits.'));
+      }
+
+      setCreditFeedback({
+        type: 'success',
+        message: localize('Crédits ajoutés avec succès.', 'Credits added successfully.'),
+      });
+      setCreditAmount('10');
+      setCreditUserId('');
+      loadAdminData();
+    } catch (err: any) {
+      console.error('Erreur ajout crédits:', err);
+      setCreditFeedback({
+        type: 'error',
+        message: err?.message || localize('Une erreur est survenue.', 'An error occurred.'),
+      });
+    } finally {
+      setCreditLoading(false);
+    }
+  };
 
 
 
@@ -212,6 +268,61 @@ const handleDeleteUser = async (userId: string) => {
           </Card>
         </div>
 
+        <Card>
+          <CardHeader>
+            <CardTitle>{localize('Ajouter des crédits', 'Add credits')}</CardTitle>
+            <CardDescription>
+              {localize(
+                'Sélectionnez un utilisateur pour lui attribuer des crédits supplémentaires.',
+                'Select a user to grant additional credits.'
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleCreditSubmit} className="grid gap-4 md:grid-cols-3">
+              <div className="md:col-span-1">
+                <label className="text-sm font-medium text-slate-600">{localize('Utilisateur', 'User')}</label>
+                <select
+                  className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                  value={creditUserId}
+                  onChange={(event) => setCreditUserId(event.target.value)}
+                >
+                  <option value="">{localize('Choisir...', 'Select...')}</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name ? `${u.full_name} (${u.email})` : u.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-1">
+                <label className="text-sm font-medium text-slate-600">{localize('Montant', 'Amount')}</label>
+                <Input
+                  type="number"
+                  min={1}
+                  className="mt-1"
+                  value={creditAmount}
+                  onChange={(event) => setCreditAmount(event.target.value)}
+                />
+              </div>
+              <div className="md:col-span-1 flex items-end">
+                <Button type="submit" disabled={creditLoading} className="w-full">
+                  {creditLoading ? localize('En cours...', 'Processing...') : localize('Ajouter les crédits', 'Add credits')}
+                </Button>
+              </div>
+            </form>
+            {creditFeedback && (
+              <p
+                className={`mt-3 text-sm ${
+                  creditFeedback.type === 'success' ? 'text-green-600' : 'text-red-600'
+                }`}
+              >
+                {creditFeedback.message}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
         {/* 👥 Liste des utilisateurs */}
         <Card>
           <CardHeader>
@@ -252,7 +363,14 @@ const handleDeleteUser = async (userId: string) => {
                             ? new Date(u.expires_at).toLocaleDateString(locale)
                             : '—'}
                         </td>
-                        <td className="p-2">
+                        <td className="p-2 flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCreditUserId(u.id)}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="destructive"
                             size="sm"
