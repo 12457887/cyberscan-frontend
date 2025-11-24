@@ -329,7 +329,7 @@ export default function SubscriptionPage() {
   const startStripeCheckout = async (plan: LocalizedPlan) => {
   if (!user) return;
 
-  const response = await fetch('/api/stripe/checkout', {
+  const response = await fetch('/service/stripe/create-checkout', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -357,7 +357,7 @@ export default function SubscriptionPage() {
       return;
     }
     try {
-      const response = await fetch('/api/stripe/checkout', {
+    const response = await fetch('/service/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -482,7 +482,7 @@ export default function SubscriptionPage() {
       setPaymentError(null);
       setPaymentClientSecret(null);
       try {
-        const response = await fetch('/api/stripe/checkout', {
+        const response = await fetch('/service/stripe/create-checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

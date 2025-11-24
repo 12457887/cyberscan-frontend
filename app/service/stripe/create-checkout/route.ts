@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     headers['Cookie'] = [proxyCookies, incomingCookies].filter(Boolean).join('; ');
 
     // --- Route Stripe ---
-    let targetPath = '/stripe/create-checkout-subscription';
+    let targetPath = '/stripe/create-checkout';
     let forwardBody = body;
 
     try {
