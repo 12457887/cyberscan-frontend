@@ -25,6 +25,23 @@ interface AdminUser {
   created_at?: string;
 }
 
+interface ContactMessage {
+  id: string;
+  full_name: string | null;
+  email: string;
+  message: string;
+  created_at: string;
+}
+
+interface FreeScanEntry {
+  id: string;
+  url: string;
+  email: string | null;
+  cms_label: string | null;
+  risk_level: string | null;
+  created_at: string;
+}
+
 export default function AdminDashboard() {
   const { user, profile, loading: authLoading } = useAuth();
   const { choose } = useLanguage();
@@ -41,6 +58,8 @@ export default function AdminDashboard() {
   const loadingText = localize('Chargement...', 'Loading...');
   const router = useRouter();
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [contactMessages, setContactMessages] = useState<ContactMessage[]>([]);
+  const [freeScans, setFreeScans] = useState<FreeScanEntry[]>([]);
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalScans: 0,
@@ -96,6 +115,24 @@ export default function AdminDashboard() {
       const activeSubscriptions = usersData?.filter(u => u.status === 'active').length || 0;
 
       setStats({ totalUsers, totalScans, activeSubscriptions });
+
+      const { data: contactData, error: contactError } = await supabase
+        .from('contact_messages')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (contactError) throw contactError;
+      setContactMessages(contactData ?? []);
+
+      const { data: freeScanData, error: freeScanError } = await supabase
+        .from('free_scans')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (freeScanError) throw freeScanError;
+      setFreeScans(freeScanData ?? []);
 
     } catch (err: any) {
       console.error('Erreur chargement données admin:', err);
@@ -391,6 +428,84 @@ const handleDeleteUser = async (userId: string) => {
                 </tbody>
               </table>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{localize('Messages de contact', 'Contact messages')}</CardTitle>
+            <CardDescription>
+              {localize('Derniers messages envoyés via le formulaire public', 'Latest messages from the public form')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {contactMessages.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                {localize('Aucun message reçu pour le moment.', 'No contact messages yet.')}
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {contactMessages.map((message) => (
+                  <div key={message.id} className="border border-slate-200 rounded-lg p-3 shadow-sm">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between text-xs text-slate-500">
+                      <span>{message.full_name || message.email}</span>
+                      <span>{new Date(message.created_at).toLocaleString(locale)}</span>
+                    </div>
+                    <p className="text-sm text-slate-900 mt-2 whitespace-pre-line">{message.message}</p>
+                    <p className="text-xs text-slate-500 mt-1">{message.email}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{localize('Scans gratuits collectés', 'Collected free scans')}</CardTitle>
+            <CardDescription>
+              {localize('Historique des scans instantanés et des emails capturés', 'History of instant scans and captured emails')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {freeScans.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                {localize('Aucun scan gratuit enregistré pour le moment.', 'No free scans collected yet.')}
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {freeScans.map((scan) => (
+                  <div key={scan.id} className="border border-slate-200 rounded-lg p-3 text-sm flex flex-col gap-1">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1">
+                      <span className="font-semibold text-slate-900">{scan.url}</span>
+                      <span className="text-xs text-slate-500">
+                        {new Date(scan.created_at).toLocaleString(locale)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-600 flex flex-wrap gap-2">
+                      {scan.email && (
+                        <span>
+                          Email:&nbsp;
+                          <strong>{scan.email}</strong>
+                        </span>
+                      )}
+                      {scan.cms_label && (
+                        <span>
+                          CMS:&nbsp;
+                          <strong>{scan.cms_label}</strong>
+                        </span>
+                      )}
+                      {scan.risk_level && (
+                        <span>
+                          Risk:&nbsp;
+                          <strong>{scan.risk_level}</strong>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

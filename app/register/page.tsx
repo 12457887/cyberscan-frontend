@@ -12,8 +12,9 @@ import { Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
+import { GoogleReCaptchaProvider, useGoogleReCaptcha } from 'react-google-recaptcha-v3';
 
-export default function RegisterPage() {
+function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -29,11 +30,47 @@ export default function RegisterPage() {
   const router = useRouter();
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
+  const { executeRecaptcha } = useGoogleReCaptcha();
+  const requiresRecaptcha = Boolean(recaptchaSiteKey);
+
+  const runRecaptcha = async (action: string) => {
+    if (!requiresRecaptcha) return true;
+    if (!executeRecaptcha) {
+      setError(localize('reCAPTCHA indisponible, réessayez.', 'reCAPTCHA not ready, please try again.'));
+      return false;
+    }
+    try {
+      const token = await executeRecaptcha(action);
+      if (!token) {
+        setError(localize('Impossible de valider reCAPTCHA.', 'Unable to validate reCAPTCHA.'));
+        return false;
+      }
+      const response = await fetch('/service/recaptcha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        setError(data?.error || localize('reCAPTCHA refusé.', 'reCAPTCHA rejected.'));
+        return false;
+      }
+      return true;
+    } catch (err: any) {
+      setError(err?.message || localize('Erreur reCAPTCHA.', 'reCAPTCHA error.'));
+      return false;
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
+
+    if (!(await runRecaptcha('register_create'))) {
+      setLoading(false);
+      return;
+    }
 
     if (!phoneNumber.trim()) {
       setError(localize('Veuillez saisir un numéro de téléphone valide.', 'Please provide a valid phone number.'));
@@ -75,6 +112,11 @@ export default function RegisterPage() {
     e.preventDefault();
     setError('');
     setOtpLoading(true);
+
+    if (!(await runRecaptcha('register_verify_otp'))) {
+      setOtpLoading(false);
+      return;
+    }
 
     const { error } = await verifyOtp(email, otp, fullName);
     if (error) {
@@ -248,4 +290,16 @@ export default function RegisterPage() {
       </Card>
     </div>
   );
+}
+
+export default function RegisterPage() {
+  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+  if (recaptchaSiteKey) {
+    return (
+      <GoogleReCaptchaProvider reCaptchaKey={recaptchaSiteKey} scriptProps={{ async: true, defer: true }}>
+        <RegisterPageContent recaptchaSiteKey={recaptchaSiteKey} />
+      </GoogleReCaptchaProvider>
+    );
+  }
+  return <RegisterPageContent />;
 }

@@ -80,6 +80,11 @@ export function QuickScanCard() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<QuickScanResult | null>(null);
   const [analyzerDetails, setAnalyzerDetails] = useState<AnalyzerResult | null>(null);
+  const [freeScanId, setFreeScanId] = useState<string | null>(null);
+  const [ctaEmail, setCtaEmail] = useState('');
+  const [ctaStatus, setCtaStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [ctaLoading, setCtaLoading] = useState(false);
+  const [lastScannedUrl, setLastScannedUrl] = useState('');
 
   const pickHighest = (current: Severity | null, candidate: Severity | null) => {
     if (!candidate) return current;
@@ -119,11 +124,41 @@ export function QuickScanCard() {
     };
   };
 
+  const logFreeScan = async (payload: {
+    id?: string | null;
+    url?: string;
+    email?: string;
+    cms_label?: string | null;
+    risk_level?: string | null;
+    analyzer_domain?: string | null;
+    severity_counts?: Record<Severity, number>;
+  }) => {
+    try {
+      const response = await fetch('/service/free-scan-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        console.error('Failed to log scan');
+        return null;
+      }
+      const data = await response.json();
+      return data?.id as string | null;
+    } catch (err) {
+      console.error('Error logging scan', err);
+      return null;
+    }
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
     setResult(null);
     setAnalyzerDetails(null);
+    setFreeScanId(null);
+    setCtaEmail('');
+    setCtaStatus(null);
 
     if (!url.trim()) {
       setError(localize('Merci de saisir une URL valide.', 'Please enter a valid URL.'));
@@ -131,6 +166,7 @@ export function QuickScanCard() {
     }
 
     const normalizedUrl = normalizeUrl(url);
+    setLastScannedUrl(normalizedUrl);
     let analyzerDomain: string;
     try {
       analyzerDomain = new URL(normalizedUrl).hostname;
@@ -143,7 +179,7 @@ export function QuickScanCard() {
     try {
       const payload = [
         {
-          url: normalizedUrl,
+      url: normalizedUrl,
           mode: 'light',
           preview_only: true,
         },
@@ -189,7 +225,7 @@ export function QuickScanCard() {
           : null;
 
 
-      setResult({
+      const combinedResult = {
         ...computed,
         cmsLabel: analyzerCms ?? computed.cmsLabel,
         cmsSource:
@@ -198,7 +234,20 @@ export function QuickScanCard() {
             : computed.cmsLabel
             ? computed.cmsSource
             : null,
+      };
+
+      setResult(combinedResult);
+
+      const loggedId = await logFreeScan({
+        url: normalizedUrl,
+        cms_label: combinedResult.cmsLabel,
+        risk_level: combinedResult.riskLevel,
+        analyzer_domain: analyzerDomain,
+        severity_counts: combinedResult.severityCounts,
       });
+      if (loggedId) {
+        setFreeScanId(loggedId);
+      }
     } catch (err: any) {
       console.error('Quick scan error:', err);
       setError(
@@ -208,6 +257,55 @@ export function QuickScanCard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCtaSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setCtaStatus(null);
+    if (!ctaEmail.trim()) {
+      setCtaStatus({ type: 'error', message: localize('Merci de saisir un email.', 'Please enter an email.') });
+      return;
+    }
+    setCtaLoading(true);
+    const emailValue = ctaEmail.trim();
+    const payload = {
+      id: freeScanId,
+      url: freeScanId ? undefined : lastScannedUrl || url,
+      email: emailValue,
+      cms_label: result?.cmsLabel ?? null,
+      risk_level: result?.riskLevel ?? null,
+      analyzer_domain: analyzerDetails?.domain ?? null,
+      severity_counts: result?.severityCounts,
+    };
+    const id = await logFreeScan(payload);
+    if (id) {
+      setFreeScanId(id);
+      try {
+        await fetch('/service/free-scan-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: emailValue,
+            url: lastScannedUrl || url,
+            cms_label: result?.cmsLabel ?? null,
+            risk_level: result?.riskLevel ?? null,
+          }),
+        });
+      } catch (sendError) {
+        console.error('Unable to send CTA email:', sendError);
+      }
+      setCtaStatus({
+        type: 'success',
+        message: localize('Merci ! Nous vous recontacterons avec le rapport complet.', 'Thanks! We will follow up with the full report.'),
+      });
+      setCtaEmail('');
+    } else {
+      setCtaStatus({
+        type: 'error',
+        message: localize('Impossible de sauvegarder votre demande.', 'Unable to save your request.'),
+      });
+    }
+    setCtaLoading(false);
   };
 
   const riskBadgeClass = (risk: Severity) => {
@@ -389,6 +487,62 @@ export function QuickScanCard() {
                 <span className="font-semibold text-slate-700">{result.scanTime}s</span>
               </p>
             )}
+          </div>
+        )}
+
+        {result && (
+          <div className="mt-4 bg-white/95 border border-blue-100 rounded-2xl p-5 shadow-lg space-y-4">
+            <div className="text-center space-y-1">
+              <p className="text-sm uppercase tracking-[0.25em] text-blue-500">
+                {localize('Rapport complet', 'Full report')}
+              </p>
+              <h4 className="text-xl font-semibold text-slate-900">
+                {localize('Recevez le rapport détaillé par email', 'Get the detailed report by email')}
+              </h4>
+              <p className="text-sm text-slate-500">
+                {localize(
+                  'Ou créez un compte pour débloquer toutes les recommandations.',
+                  'Or create an account to unlock every recommendation.'
+                )}
+              </p>
+            </div>
+            <form onSubmit={handleCtaSubmit} className="flex flex-col gap-3">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={ctaEmail}
+                  onChange={(event) => setCtaEmail(event.target.value)}
+                  required
+                  disabled={ctaLoading}
+                  className="flex-1"
+                />
+                <Button type="submit" disabled={ctaLoading}>
+                  {ctaLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      {localize('Envoi...', 'Sending...')}
+                    </>
+                  ) : (
+                    localize('Envoyer le rapport', 'Send the report')
+                  )}
+                </Button>
+              </div>
+              {ctaStatus && (
+                <p
+                  className={`text-xs ${
+                    ctaStatus.type === 'success' ? 'text-green-600' : 'text-red-600'
+                  }`}
+                >
+                  {ctaStatus.message}
+                </p>
+              )}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-slate-500">
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/register">{localize('Créer un compte gratuitement', 'Create a free account')}</Link>
+                </Button>
+              </div>
+            </form>
           </div>
         )}
       </CardContent>

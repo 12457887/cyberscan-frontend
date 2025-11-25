@@ -12,8 +12,9 @@ import { Loader2 } from 'lucide-react';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import Link from 'next/link';
 import { Logo } from '@/components/Logo';
+import { GoogleReCaptchaProvider, useGoogleReCaptcha } from 'react-google-recaptcha-v3';
 
-export default function LoginPage() {
+function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
@@ -27,6 +28,37 @@ export default function LoginPage() {
   const router = useRouter();
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
+  const { executeRecaptcha } = useGoogleReCaptcha();
+  const requiresRecaptcha = Boolean(recaptchaSiteKey);
+
+  const runRecaptcha = async (action: string) => {
+    if (!requiresRecaptcha) return true;
+    if (!executeRecaptcha) {
+      setError(localize('reCAPTCHA indisponible, réessayez.', 'reCAPTCHA not ready, please try again.'));
+      return false;
+    }
+    try {
+      const token = await executeRecaptcha(action);
+      if (!token) {
+        setError(localize('Impossible de valider reCAPTCHA.', 'Unable to validate reCAPTCHA.'));
+        return false;
+      }
+      const response = await fetch('/service/recaptcha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        setError(data?.error || localize('reCAPTCHA refusé.', 'reCAPTCHA rejected.'));
+        return false;
+      }
+      return true;
+    } catch (recaptchaError: any) {
+      setError(recaptchaError?.message || localize('Erreur reCAPTCHA.', 'reCAPTCHA error.'));
+      return false;
+    }
+  };
 
   /** ----------------------------------------
    * LOGIN PASSWORD HANDLER
@@ -35,6 +67,11 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
+
+     if (!(await runRecaptcha('login_password'))) {
+       setLoading(false);
+       return;
+     }
 
     const { error } = await signIn(email, password);
 
@@ -53,6 +90,12 @@ export default function LoginPage() {
     setError('');
     setOtp('');
     setOtpLoading(true);
+
+    if (!(await runRecaptcha('login_otp_request'))) {
+      setOtpLoading(false);
+      return;
+    }
+
     const { error } = await signInWithOtp(email);
 
     if (error) {
@@ -89,6 +132,12 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     setError('');
     setOauthLoading(true);
+
+    if (!(await runRecaptcha('login_google'))) {
+      setOauthLoading(false);
+      return;
+    }
+
     const { error } = await signInWithGoogle();
 
     if (error) {
@@ -181,7 +230,6 @@ export default function LoginPage() {
                 {error}
               </div>
             )}
-
             {/* BUTTON */}
             {!otpSent ? (
               <Button type="submit" className="w-full" disabled={loading}>
@@ -230,4 +278,16 @@ export default function LoginPage() {
       </Card>
     </div>
   );
+}
+
+export default function LoginPage() {
+  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
+  if (recaptchaSiteKey) {
+    return (
+      <GoogleReCaptchaProvider reCaptchaKey={recaptchaSiteKey} scriptProps={{ async: true, defer: true }}>
+        <LoginPageContent recaptchaSiteKey={recaptchaSiteKey} />
+      </GoogleReCaptchaProvider>
+    );
+  }
+  return <LoginPageContent />;
 }
