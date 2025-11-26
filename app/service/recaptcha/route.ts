@@ -56,7 +56,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const allowedHosts = ['localhost', '127.0.0.1', 'cyberscan.fr', 'scanner.securas.cloud'];
+    const allowedHosts = ['localhost', '127.0.0.1', 'cyberscan.fr', 'cyber-scan.cloud'];
     if (verification.hostname && !allowedHosts.includes(verification.hostname)) {
       return NextResponse.json(
         { error: 'Invalid hostname for reCAPTCHA.', hostname: verification.hostname },
