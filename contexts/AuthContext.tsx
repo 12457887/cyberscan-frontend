@@ -323,7 +323,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setProfile(null);
     setCredits(null);
-    router.push("/login");
+    router.push("/dashboard");
   };
 
   return (

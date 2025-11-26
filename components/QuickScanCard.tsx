@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { AlertCircle, CheckCircle2, Globe, Lock, Loader2, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 
@@ -85,6 +86,7 @@ export function QuickScanCard() {
   const [ctaStatus, setCtaStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [ctaLoading, setCtaLoading] = useState(false);
   const [lastScannedUrl, setLastScannedUrl] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const pickHighest = (current: Severity | null, candidate: Severity | null) => {
     if (!candidate) return current;
@@ -164,6 +166,15 @@ export function QuickScanCard() {
       setError(localize('Merci de saisir une URL valide.', 'Please enter a valid URL.'));
       return;
     }
+    if (!termsAccepted) {
+      setError(
+        localize(
+          "Merci de confirmer que vous avez l'autorisation de scanner ce domaine.",
+          'Please confirm that you are authorized to scan this domain.'
+        )
+      );
+      return;
+    }
 
     const normalizedUrl = normalizeUrl(url);
     setLastScannedUrl(normalizedUrl);
@@ -179,7 +190,7 @@ export function QuickScanCard() {
     try {
       const payload = [
         {
-      url: normalizedUrl,
+          url: normalizedUrl,
           mode: 'light',
           preview_only: true,
         },
@@ -201,8 +212,20 @@ export function QuickScanCard() {
       });
 
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || 'Scan failed');
+        let message: string | undefined;
+        try {
+          const asJson = await response.json();
+          message = asJson?.detail || asJson?.message || asJson?.error;
+        } catch {
+          message = await response.text();
+        }
+        throw new Error(
+          message ||
+            localize(
+              "Le scan n'a pas pu démarrer. Réessayez dans quelques instants.",
+              'The scan could not start. Please try again shortly.'
+            )
+        );
       }
 
       const data = await response.json();
@@ -250,10 +273,16 @@ export function QuickScanCard() {
       }
     } catch (err: any) {
       console.error('Quick scan error:', err);
-      setError(
-        err?.message ||
-          localize('Une erreur est survenue pendant le scan.', 'An error occurred while scanning.')
-      );
+      const message =
+        err?.message &&
+        // Avoid leaking low-level fetch errors to users
+        !/TypeError: fetch failed|Failed to fetch/i.test(err.message)
+          ? err.message
+          : localize(
+              'Connexions impossibles pour ce site. Vérifiez que le domaine répond et réessayez.',
+              'We could not reach this site. Please make sure it is reachable and try again.'
+            );
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -353,7 +382,7 @@ export function QuickScanCard() {
           <Button
             type="submit"
             className="h-12 px-8 text-white bg-gradient-to-r from-blue-600 to-cyan-500"
-            disabled={loading}
+            disabled={loading || !termsAccepted}
           >
             {loading ? (
               <span className="flex items-center gap-2">
@@ -373,9 +402,17 @@ export function QuickScanCard() {
           </div>
         </div>
 
-        <div className="flex items-start gap-2 text-[11px] leading-snug text-slate-500">
-          <ShieldCheck className="w-4 h-4 mt-0.5" />
-          <p>
+        <label
+          htmlFor="quick-scan-permission"
+          className="flex items-center gap-3 text-[11px] leading-snug text-slate-500"
+        >
+          <Checkbox
+            id="quick-scan-permission"
+            checked={termsAccepted}
+            onCheckedChange={(checked) => setTermsAccepted(checked === true)}
+            aria-describedby="quick-scan-permission-text"
+          />
+          <p id="quick-scan-permission-text" className="m-0">
             {localize("Je déclare que ", 'I declare that ')}
             <span className="italic font-semibold">
               {localize(
@@ -388,7 +425,7 @@ export function QuickScanCard() {
             </Link>
             <span className="italic font-semibold">.</span>
           </p>
-        </div>
+        </label>
 
         {loading && (
           <div className="rounded-2xl border border-blue-100 bg-white/90 shadow-inner p-6 text-center space-y-3">
