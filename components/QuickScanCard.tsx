@@ -215,18 +215,27 @@ export function QuickScanCard() {
         let message: string | undefined;
         const rawBody = await response.text();
         try {
+          // Try JSON first
           const asJson = rawBody ? JSON.parse(rawBody) : null;
           message = asJson?.detail || asJson?.message || asJson?.error;
         } catch {
-          message = rawBody;
+          // If backend (or a proxy like Cloudflare) returns HTML, suppress it
+          const looksLikeHtml = /<html|<!doctype/i.test(rawBody || '');
+          if (!looksLikeHtml) {
+            message = rawBody;
+          }
         }
-        throw new Error(
-          message ||
-            localize(
-              "Le scan n'a pas pu démarrer. Réessayez dans quelques instants.",
-              'The scan could not start. Please try again shortly.'
-            )
-        );
+        const fallback =
+          response.status >= 500
+            ? localize(
+                'Le service de scan est temporairement indisponible. Merci de réessayer dans quelques instants.',
+                'Our scanning service is temporarily unavailable. Please try again shortly.'
+              )
+            : localize(
+                "Le scan n'a pas pu démarrer. Vérifiez l'URL et réessayez.",
+                'The scan could not start. Please verify the URL and try again.'
+              );
+        throw new Error(message || fallback);
       }
 
       const data = await response.json();
