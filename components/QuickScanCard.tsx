@@ -213,11 +213,12 @@ export function QuickScanCard() {
 
       if (!response.ok) {
         let message: string | undefined;
+        const rawBody = await response.text();
         try {
-          const asJson = await response.json();
+          const asJson = rawBody ? JSON.parse(rawBody) : null;
           message = asJson?.detail || asJson?.message || asJson?.error;
         } catch {
-          message = await response.text();
+          message = rawBody;
         }
         throw new Error(
           message ||
