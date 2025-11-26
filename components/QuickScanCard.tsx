@@ -467,7 +467,7 @@ export function QuickScanCard() {
                 <p className="text-xs uppercase tracking-wide text-slate-500">
                   {localize('Niveau de risque', 'Risk level')}
                 </p>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
                   {result.riskLevel ? (
                     <Badge className={`text-sm ${riskBadgeClass(result.riskLevel)}`}>
                       {riskLabels[result.riskLevel]}
@@ -477,17 +477,27 @@ export function QuickScanCard() {
                       {localize('Non évalué', 'Not assessed')}
                     </Badge>
                   )}
-                  {result.cmsLabel && (
-                    <span className="text-xs text-slate-500">
-                      {localize('CMS détecté :', 'Detected CMS:')}{' '}
-                      <strong className="text-slate-700">
-                        {result.cmsLabel}{' '}
-                        {result.cmsSource === 'analyzer'
-                          ? localize('(analyse IA)', '(AI detection)')
-                          : localize('(scan)', '(scan)')}
-                      </strong>
-                    </span>
-                  )}
+                  {(() => {
+                    const analyzerCmsFallback = formatCmsLabel(
+                      analyzerDetails?.cms && analyzerDetails.cms.length > 0 ? analyzerDetails.cms[0] : null
+                    );
+                    const cmsLabel = result.cmsLabel || analyzerCmsFallback;
+                    const cmsSourceLabel = result.cmsLabel
+                      ? result.cmsSource === 'analyzer'
+                        ? localize('(analyse IA)', '(AI detection)')
+                        : localize('(scan)', '(scan)')
+                      : analyzerCmsFallback
+                      ? localize('(analyse IA)', '(AI detection)')
+                      : localize('(non détecté)', 'Not detected');
+                    return (
+                      <span className="text-xs text-slate-500">
+                        {localize('CMS détecté :', 'Detected CMS:')}{' '}
+                        <strong className="text-slate-700">
+                          {cmsLabel || localize('Inconnu', 'Unknown')} {cmsSourceLabel}
+                        </strong>
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
               <CheckCircle2 className="w-8 h-8 text-emerald-500" />
