@@ -36,6 +36,7 @@ type AnalyzerResult = {
   status_code?: number | null;
   title?: string | null;
   error?: string | null;
+  technologies?: string[];
 };
 
 const severityOrder: Severity[] = ['low', 'medium', 'high', 'critical'];
@@ -502,28 +503,48 @@ export function QuickScanCard() {
             </div>
 
             {analyzerDetails && (
-              <div className="grid sm:grid-cols-3 gap-3 text-sm text-slate-600">
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                  <p className="text-xs uppercase text-slate-500">{localize('Disponibilité', 'Availability')}</p>
-                  <p className="font-semibold mt-1">
-                    {analyzerDetails.error
-                      ? localize('Injoignable', 'Unreachable')
-                      : analyzerDetails.online
-                      ? localize('En ligne', 'Online')
-                      : localize('Hors ligne', 'Offline')}
-                  </p>
+              <div className="space-y-3">
+                <div className="grid sm:grid-cols-3 gap-3 text-sm text-slate-600">
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <p className="text-xs uppercase text-slate-500">{localize('Disponibilité', 'Availability')}</p>
+                    <p className="font-semibold mt-1">
+                      {analyzerDetails.error
+                        ? localize('Injoignable', 'Unreachable')
+                        : analyzerDetails.online
+                        ? localize('En ligne', 'Online')
+                        : localize('Hors ligne', 'Offline')}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <p className="text-xs uppercase text-slate-500">{localize('Adresse IP', 'IP address')}</p>
+                    <p className="font-semibold mt-1">
+                      {analyzerDetails.ip || localize('Non détectée', 'Not detected')}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    <p className="text-xs uppercase text-slate-500">{localize('Statut HTTP', 'HTTP status')}</p>
+                    <p className="font-semibold mt-1">
+                      {analyzerDetails.status_code ? analyzerDetails.status_code : localize('N/A', 'N/A')}
+                    </p>
+                  </div>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                  <p className="text-xs uppercase text-slate-500">{localize('Adresse IP', 'IP address')}</p>
-                  <p className="font-semibold mt-1">
-                    {analyzerDetails.ip || localize('Non détectée', 'Not detected')}
+                  <p className="text-xs uppercase text-slate-500">
+                    {localize('Technologies détectées', 'Detected technologies')}
                   </p>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                  <p className="text-xs uppercase text-slate-500">{localize('Statut HTTP', 'HTTP status')}</p>
-                  <p className="font-semibold mt-1">
-                    {analyzerDetails.status_code ? analyzerDetails.status_code : localize('N/A', 'N/A')}
-                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(analyzerDetails.technologies && analyzerDetails.technologies.length > 0
+                      ? analyzerDetails.technologies
+                      : [localize('Inconnues', 'Unknown')]
+                    ).map((tech, index) => (
+                      <span
+                        key={`${tech}-${index}`}
+                        className="text-xs font-medium px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600"
+                      >
+                        {tech}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
