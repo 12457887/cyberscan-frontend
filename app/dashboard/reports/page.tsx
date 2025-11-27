@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase, Scan, Vulnerability } from '@/lib/supabase';
-import { Download, Filter } from 'lucide-react';
+import { Download, Filter, Loader2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   DropdownMenu,
@@ -26,8 +26,44 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+const DISABLE_CREDIT_CHECK = process.env.NEXT_PUBLIC_DISABLE_CREDITS === 'true';
+const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
+const FINISHED_STATUSES = new Set(['completed', 'failed']);
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitForScanCompletion(scanIds: Array<string | number>, maxAttempts = 60, intervalMs = 5000) {
+  if (!scanIds.length) return 0;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const { data, error } = await supabase
+      .from('scans')
+      .select('id, status')
+      .in('id', scanIds);
+
+    if (error) {
+      console.error('Erreur vérification statut des scans:', error);
+      return 0;
+    }
+
+    const rows = (data as Array<{ id: string | number; status: string | null }>) || [];
+    if (!rows.length) {
+      return 0;
+    }
+
+    const hasActive = rows.some((row) => !row.status || ACTIVE_STATUSES.has(row.status));
+    if (!hasActive) {
+      return rows.filter((row) => row.status && FINISHED_STATUSES.has(row.status)).length;
+    }
+
+    await sleep(intervalMs);
+  }
+
+  console.warn('Temps dépassé en attendant la fin des scans:', scanIds);
+  return 0;
+}
+
 export default function ReportsPage() {
-  const { user } = useAuth();
+  const { user, refreshCredits } = useAuth();
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const locale = choose({ fr: 'fr-FR', en: 'en-US' });
@@ -58,6 +94,9 @@ export default function ReportsPage() {
     dateFrom: '',
     dateTo: '',
   });
+  const [rescanLoadingId, setRescanLoadingId] = useState<string | null>(null);
+  const [rescanMessage, setRescanMessage] = useState<string | null>(null);
+  const [rescanError, setRescanError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -110,6 +149,205 @@ export default function ReportsPage() {
       console.error('Error loading reports:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const ensureRescanCredit = async () => {
+    if (DISABLE_CREDIT_CHECK || !user?.id) {
+      return true;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('credits')
+        .select('remaining_credits')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Erreur lecture crédits rescan:', error);
+        setRescanError(
+          localize('Impossible de vérifier vos crédits. Réessayez plus tard.', 'Unable to verify your credits. Please try again later.')
+        );
+        return false;
+      }
+
+      const remaining = data?.remaining_credits ?? 0;
+      if (remaining < 1) {
+        setRescanError(
+          localize('Crédits insuffisants pour relancer ce scan.', 'Not enough credits to relaunch this scan.')
+        );
+        return false;
+      }
+    } catch (err) {
+      console.error('Erreur rescan crédits:', err);
+      setRescanError(
+        localize('Impossible de vérifier vos crédits. Réessayez plus tard.', 'Unable to verify your credits. Please try again later.')
+      );
+      return false;
+    }
+
+    return true;
+  };
+
+  const trackCreditConsumption = (scanIds: Array<string | number>) => {
+    if (!user?.id || scanIds.length === 0) {
+      return;
+    }
+
+    (async () => {
+      const finishedCount = await waitForScanCompletion(scanIds);
+      if (!finishedCount) {
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('credits')
+        .select('used_credits, total_credits')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Erreur lecture crédits post-rescan:', error);
+        return;
+      }
+
+      const currentUsed = data?.used_credits ?? 0;
+      const newUsed = currentUsed + finishedCount;
+      const updatePayload: Record<string, any> = {
+        used_credits: newUsed,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error: updateError } = await supabase
+        .from('credits')
+        .update(updatePayload)
+        .eq('user_id', user.id);
+
+      if (updateError) {
+        console.error('Erreur mise à jour crédits post-rescan:', updateError);
+      } else if (typeof refreshCredits === 'function') {
+        refreshCredits().catch((err) => console.error('Erreur refresh credits rescan:', err));
+      }
+    })().catch((err) => {
+      console.error('Erreur suivi des crédits (rescan):', err);
+    });
+  };
+
+  const handleRescan = async (scan: Scan) => {
+    if (!user) return;
+    setRescanError(null);
+    setRescanMessage(null);
+    setRescanLoadingId(scan.id);
+
+    const hasCredits = await ensureRescanCredit();
+    if (!hasCredits) {
+      setRescanLoadingId(null);
+      return;
+    }
+
+    let normalizedUrl: string;
+    try {
+      normalizedUrl = new URL(scan.site_url).toString();
+    } catch {
+      setRescanError(
+        localize("L'URL de ce scan est invalide. Lancez un nouveau scan depuis le formulaire.", 'Invalid scan URL. Please launch a new scan from the form.')
+      );
+      setRescanLoadingId(null);
+      return;
+    }
+
+    const hostname = (() => {
+      try {
+        return new URL(normalizedUrl).hostname;
+      } catch {
+        return scan.site_name || normalizedUrl;
+      }
+    })();
+    const scanMode = (scan.scan_type || 'light') as 'light' | 'complete';
+
+    try {
+      const { data: inserted, error: insertError } = await supabase
+        .from('scans')
+        .insert({
+          user_id: user.id,
+          site_name: hostname,
+          site_url: normalizedUrl,
+          scan_type: scanMode,
+          status: 'pending',
+        })
+        .select()
+        .single();
+
+      if (insertError || !inserted) {
+        throw insertError || new Error(localize('Impossible de créer un nouveau scan.', 'Unable to create a new scan.'));
+      }
+
+      await supabase.from('alerts').insert({
+        user_id: user.id,
+        scan_id: inserted.id,
+        title: localize('Scan relancé', 'Scan relaunched'),
+        message: localize(
+          `Relance du scan pour ${hostname}.`,
+          `Scan relaunched for ${hostname}.`
+        ),
+        type: 'system',
+        severity: 'info',
+      });
+
+      const response = await fetch('/api/scan-auto-detect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Max-Concurrent-Scans': '1',
+        },
+        body: JSON.stringify([
+          {
+            url: normalizedUrl,
+            mode: scanMode,
+            scan_id: inserted.id,
+            frontend_scan_id: inserted.id,
+            user_id: user.id,
+          },
+        ]),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || localize('Échec du lancement du scan.', 'Failed to launch the scan.'));
+      }
+
+      try {
+        const result = await response.json();
+        if (Array.isArray(result?.scan_ids) && result.scan_ids.length > 0) {
+          const uniqueIds = (result.scan_ids as string[]).filter(
+            (id, index, arr) => arr.indexOf(id) === index
+          );
+          await Promise.all(
+            uniqueIds.map((scanId) =>
+              supabase
+                .from('scans')
+                .update({ backend_scan_id: scanId })
+                .eq('id', scanId)
+            )
+          );
+        }
+      } catch (jsonError) {
+        console.warn('Réponse inattendue de scan-auto-detect:', jsonError);
+      }
+
+      if (!DISABLE_CREDIT_CHECK) {
+        trackCreditConsumption([inserted.id]);
+      }
+
+      setRescanMessage(
+        localize('Scan relancé avec succès. Il apparaîtra dans la liste dès son démarrage.', 'Scan relaunched successfully. It will appear in the list once it starts.')
+      );
+      await loadReports();
+    } catch (err: any) {
+      console.error('Erreur rescan:', err);
+      setRescanError(err?.message || String(err));
+    } finally {
+      setRescanLoadingId(null);
     }
   };
 
@@ -335,6 +573,17 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
           </Card>
         )}
 
+        {rescanError && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {rescanError}
+          </div>
+        )}
+        {rescanMessage && (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {rescanMessage}
+          </div>
+        )}
+
         {scans.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-slate-500">
@@ -360,6 +609,7 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
                     <TableHead className="text-center">{localize('Vulnérabilités', 'Vulnerabilities')}</TableHead>
                     <TableHead>{localize('Niveau de risque', 'Risk level')}</TableHead>
                     <TableHead>{localize('Export', 'Export')}</TableHead>
+                    <TableHead>{localize('Relancer', 'Rescan')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -401,6 +651,23 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
                             {localize('En attente de rapport', 'Waiting for report')}
                           </span>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleRescan(scan)}
+                          disabled={rescanLoadingId === scan.id}
+                        >
+                          {rescanLoadingId === scan.id ? (
+                            <span className="flex items-center gap-1">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              {localize('Relance...', 'Rescanning...')}
+                            </span>
+                          ) : (
+                            localize('Relancer', 'Rescan')
+                          )}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
