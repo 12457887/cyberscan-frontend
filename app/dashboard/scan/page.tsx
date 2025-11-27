@@ -97,37 +97,8 @@ export default function ScanPage() {
     }
 
     (async () => {
-      const finishedCount = await waitForScanCompletion(scanIds);
-      if (!finishedCount) {
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('credits')
-        .select('used_credits, total_credits')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Erreur lecture crédits post-scan:', error);
-        return;
-      }
-
-      const currentUsed = data?.used_credits ?? 0;
-      const newUsed = currentUsed + finishedCount;
-      const updatePayload: Record<string, any> = {
-        used_credits: newUsed,
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error: updateError } = await supabase
-        .from('credits')
-        .update(updatePayload)
-        .eq('user_id', user.id);
-
-      if (updateError) {
-        console.error('Erreur mise à jour crédits post-scan:', updateError);
-      } else if (typeof refreshCredits === 'function') {
+      await waitForScanCompletion(scanIds);
+      if (typeof refreshCredits === 'function') {
         refreshCredits().catch((err) => console.error('Erreur refresh credits:', err));
       }
     })().catch((err) => {
@@ -304,17 +275,46 @@ export default function ScanPage() {
       if (!DISABLE_CREDIT_CHECK) {
         const { data } = await supabase
           .from('credits')
-          .select('remaining_credits, used_credits, total_credits')
+          .select('used_credits, total_credits')
           .eq('user_id', user.id)
           .maybeSingle();
 
-        creditsData = data || { remaining_credits: 0, used_credits: 0, total_credits: 0 };
+        creditsData = data
+          ? {
+              remaining_credits: (data.total_credits ?? 0) - (data.used_credits ?? 0),
+              used_credits: data.used_credits ?? 0,
+              total_credits: data.total_credits ?? 0,
+            }
+          : { remaining_credits: 0, used_credits: 0, total_credits: 0 };
 
         if (!creditsData || (creditsData.remaining_credits || 0) < normalizedUrls.length) {
           setError(localize('Crédits insuffisants pour lancer cette série de scans.', 'Not enough credits to launch this batch of scans.'));
           setLoading(false);
           stopProgress(false);
           return;
+        }
+
+        const newUsed = (creditsData.used_credits ?? 0) + normalizedUrls.length;
+        const { error: reserveError } = await supabase
+          .from('credits')
+          .update({
+            used_credits: newUsed,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', user.id);
+
+        if (reserveError) {
+          console.error('Erreur réservation crédits:', reserveError);
+          setError(localize('Impossible de réserver vos crédits.', 'Unable to reserve your credits.'));
+          setLoading(false);
+          stopProgress(false);
+          return;
+        }
+
+        creditsData.used_credits = newUsed;
+        creditsData.remaining_credits = (creditsData.total_credits ?? 0) - newUsed;
+        if (typeof refreshCredits === 'function') {
+          refreshCredits().catch((err) => console.error('Erreur refresh credits:', err));
         }
       }
 

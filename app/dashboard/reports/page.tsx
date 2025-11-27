@@ -154,12 +154,12 @@ export default function ReportsPage() {
 
   const ensureRescanCredit = async () => {
     if (DISABLE_CREDIT_CHECK || !user?.id) {
-      return true;
+      return { total: 0, used: 0 };
     }
     try {
       const { data, error } = await supabase
         .from('credits')
-        .select('remaining_credits')
+        .select('total_credits, used_credits')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -168,25 +168,27 @@ export default function ReportsPage() {
         setRescanError(
           localize('Impossible de vérifier vos crédits. Réessayez plus tard.', 'Unable to verify your credits. Please try again later.')
         );
-        return false;
+        return null;
       }
 
-      const remaining = data?.remaining_credits ?? 0;
+      const total = data?.total_credits ?? 0;
+      const used = data?.used_credits ?? 0;
+      const remaining = total - used;
       if (remaining < 1) {
         setRescanError(
           localize('Crédits insuffisants pour relancer ce scan.', 'Not enough credits to relaunch this scan.')
         );
-        return false;
+        return null;
       }
+
+      return { total, used };
     } catch (err) {
       console.error('Erreur rescan crédits:', err);
       setRescanError(
         localize('Impossible de vérifier vos crédits. Réessayez plus tard.', 'Unable to verify your credits. Please try again later.')
       );
-      return false;
+      return null;
     }
-
-    return true;
   };
 
   const trackCreditConsumption = (scanIds: Array<string | number>) => {
@@ -195,37 +197,8 @@ export default function ReportsPage() {
     }
 
     (async () => {
-      const finishedCount = await waitForScanCompletion(scanIds);
-      if (!finishedCount) {
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('credits')
-        .select('used_credits, total_credits')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Erreur lecture crédits post-rescan:', error);
-        return;
-      }
-
-      const currentUsed = data?.used_credits ?? 0;
-      const newUsed = currentUsed + finishedCount;
-      const updatePayload: Record<string, any> = {
-        used_credits: newUsed,
-        updated_at: new Date().toISOString(),
-      };
-
-      const { error: updateError } = await supabase
-        .from('credits')
-        .update(updatePayload)
-        .eq('user_id', user.id);
-
-      if (updateError) {
-        console.error('Erreur mise à jour crédits post-rescan:', updateError);
-      } else if (typeof refreshCredits === 'function') {
+      await waitForScanCompletion(scanIds);
+      if (typeof refreshCredits === 'function') {
         refreshCredits().catch((err) => console.error('Erreur refresh credits rescan:', err));
       }
     })().catch((err) => {
@@ -239,8 +212,33 @@ export default function ReportsPage() {
     setRescanMessage(null);
     setRescanLoadingId(scan.id);
 
-    const hasCredits = await ensureRescanCredit();
-    if (!hasCredits) {
+    const creditSnapshot = await ensureRescanCredit();
+    if (!creditSnapshot) {
+      setRescanLoadingId(null);
+      return;
+    }
+    const newUsed = (creditSnapshot.used ?? 0) + 1;
+    try {
+      const { error: reserveError } = await supabase
+        .from('credits')
+        .update({
+          used_credits: newUsed,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id);
+
+      if (reserveError) {
+        console.error('Erreur réservation crédits rescan:', reserveError);
+        setRescanError(localize('Impossible de réserver vos crédits.', 'Unable to reserve your credits.'));
+        setRescanLoadingId(null);
+        return;
+      }
+      if (typeof refreshCredits === 'function') {
+        refreshCredits().catch((err) => console.error('Erreur refresh credits rescan:', err));
+      }
+    } catch (reserveException) {
+      console.error('Erreur réservation crédits rescan:', reserveException);
+      setRescanError(localize('Impossible de réserver vos crédits.', 'Unable to reserve your credits.'));
       setRescanLoadingId(null);
       return;
     }
