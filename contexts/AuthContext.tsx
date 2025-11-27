@@ -16,14 +16,22 @@ type CreditsSummary = {
   remaining: number;
 };
 
+type VerifyOtpType = 'email' | 'signup';
+
 type AuthContextType = {
   user: User | null;
   profile: Profile | null;
   credits: CreditsSummary | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<AuthResponse>;
-  signInWithOtp: (email: string) => Promise<AuthResponse>;
-  verifyOtp: (email: string, token: string, fullName?: string) => Promise<AuthResponse>;
+  signInWithOtp: (email: string, shouldCreateUser?: boolean) => Promise<AuthResponse>;
+  verifyOtp: (
+    email: string,
+    token: string,
+    fullName?: string,
+    type?: VerifyOtpType,
+    passwordToSet?: string
+  ) => Promise<AuthResponse>;
   signInWithGoogle: () => Promise<AuthResponse>;
   signUp: (
     email: string,
@@ -139,11 +147,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /** -------------------------
    * LOGIN OTP
    --------------------------*/
-  const signInWithOtp = async (email: string): Promise<AuthResponse> => {
+  const signInWithOtp = async (email: string, shouldCreateUser = false): Promise<AuthResponse> => {
+    const emailRedirectTo =
+      typeof window !== "undefined" ? `${window.location.origin}/login` : undefined;
+
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        shouldCreateUser: false,
+        shouldCreateUser,
+        emailRedirectTo,
       },
     });
 
@@ -155,16 +167,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    --------------------------*/
   const signUp = async (
     email: string,
-    password: string,
+    _password: string,
     fullName: string,
     phoneNumber: string
   ): Promise<AuthResponse> => {
-    // 1️⃣ Create user WITHOUT sending magic link
-    const { data, error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signInWithOtp({
       email,
-      password,
       options: {
-        emailRedirectTo: undefined,
+        shouldCreateUser: true,
         data: {
           name: fullName,
           full_name: fullName,
@@ -173,21 +183,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     });
 
-    if (error) return { error, message: error.message };
-
-    // 2️⃣ Send OTP manually
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: false },
-    });
-
-    if (!otpError) setUser(data.user!);
-
     return {
-      error: otpError,
-      message: otpError
-        ? otpError.message
-        : "Un code OTP vous a été envoyé par email.",
+      error,
+      message: error?.message,
     };
   };
 
@@ -197,18 +195,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const verifyOtp = async (
     email: string,
     token: string,
-    providedFullName?: string
+    providedFullName?: string,
+    type: VerifyOtpType = 'email',
+    passwordToSet?: string
   ): Promise<AuthResponse> => {
     const { data, error } = await supabase.auth.verifyOtp({
       email,
       token,
-      type: "email",
+      type,
     });
 
     if (error) return { error, message: error.message };
 
     const user = data.user;
     if (!user) return { error: true, message: "User not found after OTP." };
+
+    if (type === 'signup' && passwordToSet) {
+      const { error: passwordError } = await supabase.auth.updateUser({
+        password: passwordToSet,
+      });
+      if (passwordError) {
+        console.error("Erreur update mot de passe:", passwordError);
+        return { error: passwordError, message: passwordError.message };
+      }
+    }
 
     const now = new Date().toISOString();
 
@@ -220,64 +230,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user.email ||
       undefined;
 
-    const profilePayload = {
-      id: user.id,
-      email: user.email!,
-      full_name: resolvedFullName,
-      phone_number: user.user_metadata?.phone_number ?? undefined,
-      role: "client",
-      created_at: now,
-      updated_at: now,
-    };
-    const { error: profileError } = await supabase.from("profiles").upsert(profilePayload);
-    if (profileError) {
-      console.error("Erreur upsert profile:", profileError);
-      return { error: profileError, message: profileError.message };
-    }
-    setProfile({
-      id: user.id,
-      email: user.email!,
-      full_name: profilePayload.full_name ?? null,
-      phone_number: profilePayload.phone_number,
-      role: "client",
-      created_at: profilePayload.created_at,
-      updated_at: profilePayload.updated_at,
+    const bootstrapResponse = await fetch("/service/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: user.id,
+        email: user.email,
+        fullName: resolvedFullName,
+        phoneNumber: user.user_metadata?.phone_number ?? undefined,
+      }),
     });
 
-    // 2️⃣ Credits
-    const creditsPayload = {
-      user_id: user.id,
-      total_credits: 3,
-      used_credits: 0,
-      last_reset_at: now,
-      created_at: now,
-      updated_at: now,
-    };
-    const { error: creditsError } = await supabase.from("credits").upsert(creditsPayload);
-    if (creditsError) {
-      console.error("Erreur upsert crédits:", creditsError);
-      return { error: creditsError, message: creditsError.message };
+    if (!bootstrapResponse.ok) {
+      const payload = await bootstrapResponse.json().catch(() => null);
+      const message = payload?.error || "Impossible de finaliser l'inscription.";
+      return { error: true, message };
     }
-    setCredits({
-      total: creditsPayload.total_credits,
-      used: creditsPayload.used_credits,
-      remaining: creditsPayload.total_credits - creditsPayload.used_credits,
-    });
 
-    // 3️⃣ Free subscription
-    const subscriptionPayload = {
-      user_id: user.id,
-      plan_type: "free",
-      status: "active",
-      credits_limit: 3,
-      started_at: now,
-      created_at: now,
-      updated_at: now,
-    };
-    const { error: subscriptionError } = await supabase.from("subscriptions").upsert(subscriptionPayload);
-    if (subscriptionError) {
-      console.error("Erreur upsert abonnement:", subscriptionError);
-      return { error: subscriptionError, message: subscriptionError.message };
+    const bootstrapData = await bootstrapResponse.json();
+
+    if (bootstrapData.profile) {
+      setProfile({
+        id: bootstrapData.profile.id,
+        email: bootstrapData.profile.email,
+        full_name: bootstrapData.profile.full_name,
+        phone_number: bootstrapData.profile.phone_number,
+        role: bootstrapData.profile.role ?? "client",
+        created_at: bootstrapData.profile.created_at ?? now,
+        updated_at: bootstrapData.profile.updated_at ?? now,
+      });
+    }
+
+    if (bootstrapData.credits) {
+      setCredits({
+        total: bootstrapData.credits.total ?? 0,
+        used: bootstrapData.credits.used ?? 0,
+        remaining: bootstrapData.credits.remaining ?? 0,
+      });
     }
 
     setUser(user);

@@ -14,6 +14,8 @@ import Image from 'next/image';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { GoogleReCaptchaProvider, useGoogleReCaptcha } from 'react-google-recaptcha-v3';
 
+const OTP_COOLDOWN_MS = 60_000;
+
 function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,8 +27,9 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [error, setError] = useState('');
+  const [otpCooldownUntil, setOtpCooldownUntil] = useState<number | null>(null);
 
-  const { signUp, signInWithOtp, verifyOtp } = useAuth();
+  const { signUp, verifyOtp } = useAuth();
   const router = useRouter();
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
@@ -92,19 +95,23 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
     const { error, message } = await signUp(email, password, fullName, phoneNumber.trim());
 
     if (error) {
-      setError(error.message || message || localize("Impossible de créer le compte.", 'Unable to create account.'));
-      setLoading(false);
-      return;
-    }
-
-    const { error: otpErr } = await signInWithOtp(email);
-    if (otpErr) {
-      setError(otpErr.message || localize("Erreur lors de l'envoi du code.", 'Error while sending the code.'));
+      if ((error as any)?.code === 'over_email_send_rate_limit' || /rate limit/i.test(error?.message || '')) {
+        setError(
+          localize(
+            'Vous venez de demander un code. Merci de patienter environ 1 minute avant de recommencer.',
+            'You just requested a code. Please wait about a minute before trying again.'
+          )
+        );
+        setOtpCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
+      } else {
+        setError(message || error.message || localize("Impossible d'envoyer le code OTP.", 'Unable to send the OTP.'));
+      }
       setLoading(false);
       return;
     }
 
     setOtpSent(true);
+    setOtpCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
     setLoading(false);
   };
 
@@ -118,7 +125,7 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
       return;
     }
 
-    const { error } = await verifyOtp(email, otp, fullName);
+    const { error } = await verifyOtp(email, otp, fullName, 'signup', password);
     if (error) {
       setError(error.message || localize('Code invalide', 'Invalid code'));
       setOtpLoading(false);

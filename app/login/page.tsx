@@ -14,6 +14,8 @@ import Link from 'next/link';
 import { Logo } from '@/components/Logo';
 import { GoogleReCaptchaProvider, useGoogleReCaptcha } from 'react-google-recaptcha-v3';
 
+const OTP_COOLDOWN_MS = 60_000;
+
 function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,6 +25,7 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const [otpLoading, setOtpLoading] = useState(false);
   const [error, setError] = useState('');
   const [oauthLoading, setOauthLoading] = useState(false);
+  const [otpCooldownUntil, setOtpCooldownUntil] = useState<number | null>(null);
 
   const { signIn, signInWithGoogle, signInWithOtp, verifyOtp } = useAuth();
   const router = useRouter();
@@ -99,9 +102,20 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
     const { error } = await signInWithOtp(email);
 
     if (error) {
-      setError(error.message || localize("Erreur lors de l'envoi du code", 'Error while sending code'));
+      if ((error as any)?.code === 'over_email_send_rate_limit' || /rate limit/i.test(error?.message || '')) {
+        setError(
+          localize(
+            'Vous venez de demander un code. Merci de patienter environ 1 minute avant de recommencer.',
+            'You just requested a code. Please wait about a minute before trying again.'
+          )
+        );
+        setOtpCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
+      } else {
+        setError(error.message || localize("Erreur lors de l'envoi du code", 'Error while sending code'));
+      }
     } else {
       setOtpSent(true);
+      setOtpCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
     }
 
     setOtpLoading(false);

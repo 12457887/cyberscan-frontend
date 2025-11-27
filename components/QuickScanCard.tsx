@@ -50,6 +50,30 @@ const zapSeverityMap: Record<string, Severity | undefined> = {
   severe: 'high',
   critical: 'critical',
 };
+const zapRiskCodeMap: Record<string, Severity> = {
+  '0': 'low', // informational
+  '1': 'low',
+  '2': 'medium',
+  '3': 'high',
+  '4': 'critical',
+};
+
+const mapZapAlertSeverity = (alert: { risk?: string | null; severity?: string | null; riskcode?: string | number | null; riskCode?: string | number | null }): Severity | null => {
+  const textual = (alert?.risk || alert?.severity || '').toLowerCase();
+  if (textual && zapSeverityMap[textual]) {
+    return zapSeverityMap[textual] ?? null;
+  }
+
+  const numericValue = alert?.riskcode ?? alert?.riskCode;
+  if (numericValue !== undefined && numericValue !== null) {
+    const code = String(numericValue).trim();
+    if (code && zapRiskCodeMap[code] !== undefined) {
+      return zapRiskCodeMap[code];
+    }
+  }
+
+  return null;
+};
 
 const normalizeUrl = (value: string) => {
   const trimmed = value.trim();
@@ -113,10 +137,19 @@ export function QuickScanCard() {
 
     scan.cms_scan?.cves?.forEach((cve) => registerSeverity(cve?.severity));
     scan.nuclei_scan?.parsed_results?.forEach((item) => registerSeverity(item?.severity));
-    scan.zap_scan?.alerts?.forEach((alert) => {
-      const mapped = zapSeverityMap[(alert?.risk || alert?.severity || '').toLowerCase()];
+    const zapAlerts = scan.zap_scan?.alerts ?? [];
+    zapAlerts.forEach((alert) => {
+      const mapped = mapZapAlertSeverity(alert);
       if (mapped) registerSeverity(mapped);
     });
+
+    if (!highest && zapAlerts.length > 0) {
+      // If nuclei returned nothing but ZAP raised alerts without explicit severity,
+      // fall back to marking the site as low risk at least.
+      const fallbackSeverity =
+        zapAlerts.map((alert) => mapZapAlertSeverity(alert)).find((sev): sev is Severity => !!sev) ?? 'low';
+      registerSeverity(fallbackSeverity);
+    }
 
     return {
       cmsLabel: formatCmsLabel(scan.cms_type),
