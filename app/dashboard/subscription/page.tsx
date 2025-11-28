@@ -39,7 +39,7 @@ export default function SubscriptionPage() {
   const locale = choose({ fr: 'fr-FR', en: 'en-US' });
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [actionLoadingPlan, setActionLoadingPlan] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
