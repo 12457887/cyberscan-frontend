@@ -23,6 +23,8 @@ type QuickScanResult = {
 type ScanApiResult = {
   cms_type?: string | null;
   scan_time?: number;
+  scan_id?: string | null;
+  mongo_id?: string | null;
   cms_scan?: { cves?: Array<{ severity?: string | null }> } | null;
   nuclei_scan?: { parsed_results?: Array<{ severity?: string | null }> } | null;
   zap_scan?: { alerts?: Array<{ risk?: string | null; severity?: string | null }> } | null;
@@ -107,6 +109,8 @@ export function QuickScanCard() {
   const [result, setResult] = useState<QuickScanResult | null>(null);
   const [analyzerDetails, setAnalyzerDetails] = useState<AnalyzerResult | null>(null);
   const [freeScanId, setFreeScanId] = useState<string | null>(null);
+  const [reportScanId, setReportScanId] = useState<string | null>(null);
+  const [reportMongoId, setReportMongoId] = useState<string | null>(null);
   const [ctaEmail, setCtaEmail] = useState('');
   const [ctaStatus, setCtaStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [ctaLoading, setCtaLoading] = useState(false);
@@ -193,6 +197,8 @@ export function QuickScanCard() {
     setResult(null);
     setAnalyzerDetails(null);
     setFreeScanId(null);
+    setReportScanId(null);
+    setReportMongoId(null);
     setCtaEmail('');
     setCtaStatus(null);
 
@@ -283,6 +289,8 @@ export function QuickScanCard() {
         throw new Error(localize("Impossible d'obtenir les résultats du scan.", 'Scan results are unavailable.'));
       }
 
+      setReportScanId((scanRaw as ScanApiResult)?.scan_id ?? null);
+      setReportMongoId((scanRaw as ScanApiResult)?.mongo_id ?? null);
       const computed = computeRiskFromResult(scanRaw as ScanApiResult);
       const analyzerCms =
         analyzerData &&
@@ -339,6 +347,16 @@ export function QuickScanCard() {
       setCtaStatus({ type: 'error', message: localize('Merci de saisir un email.', 'Please enter an email.') });
       return;
     }
+    if (!reportScanId && !reportMongoId) {
+      setCtaStatus({
+        type: 'error',
+        message: localize(
+          "Relancez un scan gratuit pour générer le rapport avant de l'envoyer.",
+          'Please rerun a quick scan so the report can be generated before sending.'
+        ),
+      });
+      return;
+    }
     setCtaLoading(true);
     const emailValue = ctaEmail.trim();
     const payload = {
@@ -354,7 +372,7 @@ export function QuickScanCard() {
     if (id) {
       setFreeScanId(id);
       try {
-        await fetch('/service/free-scan-email', {
+        const response = await fetch('/service/free-scan-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -362,14 +380,41 @@ export function QuickScanCard() {
             url: lastScannedUrl || url,
             cms_label: result?.cmsLabel ?? null,
             risk_level: result?.riskLevel ?? null,
+            scan_id: reportScanId,
+            mongo_report_id: reportMongoId,
           }),
         });
-      } catch (sendError) {
+        if (!response.ok) {
+          let message = localize("Impossible d'envoyer le rapport.", 'Unable to send the report.');
+          const raw = await response.text();
+          try {
+            const parsed = raw ? JSON.parse(raw) : null;
+            message = parsed?.detail || parsed?.message || parsed?.error || message;
+          } catch {
+            if (raw && !/<html|<!doctype/i.test(raw)) {
+              message = raw;
+            }
+          }
+          throw new Error(message);
+        }
+      } catch (sendError: any) {
         console.error('Unable to send CTA email:', sendError);
+        setCtaStatus({
+          type: 'error',
+          message:
+            sendError instanceof Error
+              ? sendError.message
+              : localize("Impossible d'envoyer le rapport.", 'Unable to send the report.'),
+        });
+        setCtaLoading(false);
+        return;
       }
       setCtaStatus({
         type: 'success',
-        message: localize('Merci ! Nous vous recontacterons avec le rapport complet.', 'Thanks! We will follow up with the full report.'),
+        message: localize(
+          'Merci ! Le rapport détaillé vient de vous être envoyé.',
+          'Thanks! The detailed report has just been sent to you.'
+        ),
       });
       setCtaEmail('');
     } else {

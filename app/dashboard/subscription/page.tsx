@@ -66,6 +66,98 @@ export default function SubscriptionPage() {
     return parseFloat(match[0].replace(',', '.'));
   };
 
+  const CYCLE_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+
+  const getNextCycleEndDate = (record: Subscription): Date | null => {
+    const start = record.started_at ? new Date(record.started_at) : null;
+    if (!start || Number.isNaN(start.getTime())) {
+      return null;
+    }
+    const candidate = new Date(start.getTime() + CYCLE_DURATION_MS);
+    if (candidate > new Date()) {
+      return candidate;
+    }
+    return new Date(new Date().getTime() + CYCLE_DURATION_MS);
+  };
+
+  const handleScheduleCancellation = async () => {
+    if (!user || !subscription) return;
+    if (subscription.plan_type === 'free') {
+      setStatusMessage({
+        type: 'info',
+        text: localize('Vous êtes déjà sur le plan Free.', 'You are already on the Free plan.'),
+      });
+      return;
+    }
+    if (subscription.status === 'cancelled') {
+      setStatusMessage({
+        type: 'info',
+        text: localize(
+          'Votre annulation est déjà programmée.',
+          'Your cancellation is already scheduled.'
+        ),
+      });
+      return;
+    }
+
+    setStatusMessage(null);
+    setActionLoadingPlan('cancel');
+
+    try {
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const cycleEnd = getNextCycleEndDate(subscription);
+      const effectiveExpiry = cycleEnd ?? new Date(now.getTime() + CYCLE_DURATION_MS);
+
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .update({
+          status: 'cancelled',
+          expires_at: effectiveExpiry.toISOString(),
+          updated_at: nowIso,
+        })
+        .eq('user_id', user.id)
+        .select('*')
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const formattedDate = formatDate(effectiveExpiry.toISOString());
+
+      await supabase.from('alerts').insert({
+        user_id: user.id,
+        title: localize('Annulation programmée', 'Cancellation scheduled'),
+        message: localize(
+          `Votre abonnement restera actif jusqu'au ${formattedDate}, puis repassera automatiquement sur l'offre Free.`,
+          `Your subscription will remain active until ${formattedDate} and then revert to the Free plan automatically.`
+        ),
+        type: 'subscription',
+        severity: 'info',
+      });
+
+      if (data) {
+        setSubscription(data);
+      }
+      setStatusMessage({
+        type: 'success',
+        text: localize(
+          `Votre abonnement restera actif jusqu'au ${formattedDate}, puis repassera en Free.`,
+          `Your subscription will stay active until ${formattedDate}, then switch back to Free.`
+        ),
+      });
+    } catch (error: any) {
+      console.error('Error scheduling cancellation:', error);
+      setStatusMessage({
+        type: 'error',
+        text:
+          error?.message ||
+          localize("Impossible de programmer l'annulation.", 'Unable to schedule the cancellation.'),
+      });
+    } finally {
+      setActionLoadingPlan(null);
+    }
+  };
+
   const planConfigs: LocalizedPlan[] = PLAN_DEFINITIONS.map((plan) => ({
     id: plan.id,
     icon: plan.icon,
@@ -81,6 +173,7 @@ export default function SubscriptionPage() {
     priceYearly: `${Math.round(parsePriceValue(plan.price) * 12)}€`,
   }));
   const planNameMap = Object.fromEntries(planConfigs.map((plan) => [plan.id, plan.name]));
+  const FREE_PLAN_CREDITS = PLAN_DEFINITIONS.find((plan) => plan.id === 'free')?.creditsLimit ?? 3;
   const formatAmount = (amountCents?: number | null, currency?: string | null) => {
     const amount = (amountCents ?? 0) / 100;
     const safeCurrency = (currency || 'EUR').toUpperCase();
@@ -132,6 +225,56 @@ export default function SubscriptionPage() {
     };
   }, [publishableKey]);
 
+  const finalizeCancellationIfNeeded = async (record: Subscription | null): Promise<Subscription | null> => {
+    if (!user || !record) return record;
+    if (record.plan_type === 'free') return record;
+    if (record.status !== 'cancelled') return record;
+    if (!record.expires_at) return record;
+
+    const expiryDate = new Date(record.expires_at);
+    if (Number.isNaN(expiryDate.getTime()) || expiryDate > new Date()) {
+      return record;
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    const { data, error } = await supabase
+      .from('subscriptions')
+      .update({
+        plan_type: 'free',
+        credits_limit: FREE_PLAN_CREDITS,
+        status: 'active',
+        started_at: nowIso,
+        expires_at: null,
+        updated_at: nowIso,
+      })
+      .eq('user_id', user.id)
+      .select('*')
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error finalizing cancellation:', error);
+      return record;
+    }
+
+    try {
+      await upsertCredits(FREE_PLAN_CREDITS, nowIso);
+    } catch (creditsError) {
+      console.error('Error resetting credits after cancellation:', creditsError);
+    }
+
+    setStatusMessage({
+      type: 'success',
+      text: localize(
+        'Votre abonnement a expiré et vous êtes revenu(e) sur le plan Free.',
+        'Your subscription expired and your account has been moved back to the Free plan.'
+      ),
+    });
+
+    return data ?? record;
+  };
+
   const loadSubscription = async () => {
     if (!user) return;
 
@@ -142,11 +285,55 @@ export default function SubscriptionPage() {
         .eq('user_id', user.id)
         .maybeSingle();
 
-      if (data) setSubscription(data);
+      if (data) {
+        const normalized = await finalizeCancellationIfNeeded(data);
+        setSubscription(normalized ?? data);
+      }
     } catch (error) {
       console.error('Error loading subscription:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const upsertCredits = async (creditsLimit: number, nowIso: string) => {
+    if (!user) return;
+
+    const {
+      data: existingCredits,
+      error: fetchCreditsError,
+    } = await supabase
+      .from('credits')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (fetchCreditsError) throw fetchCreditsError;
+
+    const creditsPayload = {
+      total_credits: creditsLimit,
+      used_credits: 0,
+      last_reset_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    if (existingCredits) {
+      const { error: creditsError } = await supabase
+        .from('credits')
+        .update(creditsPayload)
+        .eq('user_id', user.id);
+
+      if (creditsError) throw creditsError;
+    } else {
+      const { error: creditsError } = await supabase
+        .from('credits')
+        .insert({
+          user_id: user.id,
+          ...creditsPayload,
+          created_at: nowIso,
+        });
+
+      if (creditsError) throw creditsError;
     }
   };
 
@@ -211,42 +398,7 @@ export default function SubscriptionPage() {
         if (subscriptionError) throw subscriptionError;
       }
 
-      const {
-        data: existingCredits,
-        error: fetchCreditsError,
-      } = await supabase
-        .from('credits')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (fetchCreditsError) throw fetchCreditsError;
-
-      const creditsPayload = {
-        total_credits: creditsLimit,
-        used_credits: 0,
-        last_reset_at: nowIso,
-        updated_at: nowIso,
-      };
-
-      if (existingCredits) {
-        const { error: creditsError } = await supabase
-          .from('credits')
-          .update(creditsPayload)
-          .eq('user_id', user.id);
-
-        if (creditsError) throw creditsError;
-      } else {
-        const { error: creditsError } = await supabase
-          .from('credits')
-          .insert({
-            user_id: user.id,
-            ...creditsPayload,
-            created_at: nowIso,
-          });
-
-        if (creditsError) throw creditsError;
-      }
+      await upsertCredits(creditsLimit, nowIso);
 
       await supabase.from('alerts').insert({
         user_id: user.id,
@@ -297,6 +449,72 @@ export default function SubscriptionPage() {
       );
     } finally {
       setInvoicesLoading(false);
+    }
+  };
+
+  const handleRefundRequest = async () => {
+    if (!subscription) return;
+    setStatusMessage(null);
+    setActionLoadingPlan('refund');
+    try {
+      const invoiceId = invoices?.[0]?.id ?? null;
+      const response = await fetch('/service/stripe/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'request-refund',
+          userId: subscription.user_id,
+          invoiceId,
+        }),
+      });
+
+      const rawPayload = await response.text();
+      let data: any = null;
+      try {
+        data = rawPayload ? JSON.parse(rawPayload) : null;
+      } catch (err) {
+        data = null;
+      }
+
+      if (!response.ok) {
+        const message =
+          data?.detail ||
+          data?.error ||
+          data?.message ||
+          localize('Impossible de traiter votre demande de remboursement.', 'Unable to process your refund request.');
+        throw new Error(message);
+      }
+
+      const amountLabel =
+        typeof data?.amountCents === 'number'
+          ? `${(data.amountCents / 100).toFixed(2)} ${String(data?.currency || 'EUR').toUpperCase()}`
+          : null;
+
+      setStatusMessage({
+        type: 'success',
+        text: amountLabel
+          ? localize(
+              `Remboursement Stripe initié (${amountLabel}).`,
+              `Stripe refund initiated (${amountLabel}).`
+            )
+          : localize(
+              'Votre demande de remboursement Stripe a été transmise.',
+              'Your refund request has been submitted to Stripe.'
+            ),
+      });
+
+      await loadInvoices();
+      await loadSubscription();
+    } catch (error: any) {
+      console.error('Refund request error:', error);
+      setStatusMessage({
+        type: 'error',
+        text:
+          error?.message ||
+          localize('Impossible de traiter votre demande de remboursement.', 'Unable to process your refund request.'),
+      });
+    } finally {
+      setActionLoadingPlan(null);
     }
   };
 
@@ -669,25 +887,46 @@ export default function SubscriptionPage() {
               <CardContent className="flex flex-col gap-3 text-sm text-slate-700">
                 <p>
                   {localize(
-                    'Pour annuler immédiatement votre abonnement, utilisez le bouton ci-dessous.',
-                    'To cancel your subscription immediately, use the button below.'
+                    'L’annulation prend effet à la fin de votre cycle en cours. Vous gardez vos accès jusqu’à cette date.',
+                    'Cancellation takes effect at the end of your current billing cycle. You keep your access until then.'
                   )}
                 </p>
+                {subscription?.status === 'cancelled' && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-700 text-sm">
+                    {localize(
+                      `Retour automatique au plan Free le ${formatDate(subscription.expires_at ?? undefined)}.`,
+                      `You will automatically switch back to the Free plan on ${formatDate(subscription.expires_at ?? undefined)}.`
+                    )}
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-3">
                   <Button
                     variant="outline"
-                    onClick={() =>
-                      handleSubscribe('free', 3, {
-                        successMessage: localize('Abonnement annulé.', 'Subscription cancelled.'),
-                      })
-                    }
+                    onClick={handleScheduleCancellation}
+                    disabled={!subscription || actionLoadingPlan === 'cancel'}
                   >
-                    {localize('Annuler et passer en Free', 'Cancel and switch to Free')}
+                    {actionLoadingPlan === 'cancel' ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {localize('Programmation…', 'Scheduling…')}
+                      </>
+                    ) : (
+                      localize('Programmer la fin du plan', 'Schedule plan cancellation')
+                    )}
                   </Button>
-                  <Button asChild variant="secondary">
-                    <a href="mailto:support@cyberscan.com?subject=Refund%20request">
-                      {localize('Demander un remboursement', 'Request a refund')}
-                    </a>
+                  <Button
+                    variant="secondary"
+                    onClick={handleRefundRequest}
+                    disabled={!subscription || actionLoadingPlan === 'refund'}
+                  >
+                    {actionLoadingPlan === 'refund' ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {localize('Demande en cours...', 'Submitting...')}
+                      </>
+                    ) : (
+                      localize('Demander un remboursement', 'Request a refund')
+                    )}
                   </Button>
                 </div>
                 <p className="text-xs text-slate-500">
