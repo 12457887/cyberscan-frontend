@@ -9,15 +9,6 @@ import { Badge } from '@/components/ui/badge';
 import { Shield, Check } from 'lucide-react';
 import { PLAN_DEFINITIONS } from '@/lib/plans';
 
-const BLACK_FRIDAY_PRICING: Record<
-  string,
-  { original: string; promo: string; reduction: string }
-> = {
-  basic: { original: '19€', promo: '9€', reduction: '-40%' },
-  pro: { original: '29€', promo: '19€', reduction: '-35%' },
-  enterprise: { original: '49€', promo: '39€', reduction: '-20%' },
-};
-
 export default function PlansPage() {
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
@@ -152,30 +143,14 @@ export default function PlansPage() {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="text-center">
-                  {billingInterval === 'monthly' && BLACK_FRIDAY_PRICING[plan.id] ? (
-                    <>
-                      <div className="flex items-baseline justify-center gap-3">
-                        <div className="text-slate-400 line-through text-lg">
-                          {BLACK_FRIDAY_PRICING[plan.id].original}
-                        </div>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-4xl font-bold text-white">
-                            {BLACK_FRIDAY_PRICING[plan.id].promo}
-                          </span>
-                          <span className="text-slate-400">{localize('/mois', '/month')}</span>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex items-baseline justify-center gap-1">
-                      <span className="text-4xl font-bold text-white">
-                        {billingInterval === 'annual' ? plan.priceYearly : plan.priceMonthly}
-                      </span>
-                      <span className="text-slate-400">
-                        {billingInterval === 'annual' ? localize('/an', '/year') : localize('/mois', '/month')}
-                      </span>
-                    </div>
-                  )}
+                  <div className="flex items-baseline justify-center gap-1">
+                    <span className="text-4xl font-bold text-white">
+                      {billingInterval === 'annual' ? plan.priceYearly : plan.priceMonthly}
+                    </span>
+                    <span className="text-slate-400">
+                      {billingInterval === 'annual' ? localize('/an', '/year') : localize('/mois', '/month')}
+                    </span>
+                  </div>
                 </div>
                 <ul className="space-y-3">
                   {plan.perks.map((perk) => (

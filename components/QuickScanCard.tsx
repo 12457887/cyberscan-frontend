@@ -431,12 +431,39 @@ export function QuickScanCard() {
       case 'critical':
         return 'bg-red-100 text-red-700';
       case 'high':
-        return 'bg-orange-100 text-orange-700';
+        return 'bg-orange-100 text-orange-800';
       case 'medium':
-        return 'bg-amber-100 text-amber-700';
+        return 'bg-yellow-50 text-yellow-700 border border-yellow-200';
       default:
         return 'bg-emerald-100 text-emerald-700';
     }
+  };
+
+  const severityTheme: Record<Severity, { bg: string; border: string; text: string; accent: string }> = {
+    low: {
+      bg: 'bg-emerald-50',
+      border: 'border-emerald-100',
+      text: 'text-emerald-700',
+      accent: 'bg-emerald-500',
+    },
+    medium: {
+      bg: 'bg-yellow-50',
+      border: 'border-yellow-100',
+      text: 'text-yellow-700',
+      accent: 'bg-yellow-400',
+    },
+    high: {
+      bg: 'bg-orange-50',
+      border: 'border-orange-200',
+      text: 'text-orange-800',
+      accent: 'bg-orange-600',
+    },
+    critical: {
+      bg: 'bg-red-50',
+      border: 'border-red-100',
+      text: 'text-red-700',
+      accent: 'bg-red-500',
+    },
   };
 
   return (
@@ -581,11 +608,24 @@ export function QuickScanCard() {
               <CheckCircle2 className="w-8 h-8 text-emerald-500" />
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {severityOrder.map((level) => (
-                <div key={level} className="bg-slate-50 rounded-lg py-2 shadow-sm border border-slate-100">
-                  <p className="font-semibold text-slate-700">{result.severityCounts[level] ?? 0}</p>
-                  <p className="text-slate-500">{riskLabels[level]}</p>
+                <div
+                  key={level}
+                  className={`rounded-xl p-3 border shadow-sm text-center ${severityTheme[level].bg} ${severityTheme[level].border}`}
+                >
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <span className={`w-2 h-2 rounded-full ${severityTheme[level].accent}`} />
+                    <p className={`text-xs font-semibold uppercase tracking-wide ${severityTheme[level].text}`}>
+                      {riskLabels[level]}
+                    </p>
+                  </div>
+                  <p className={`text-2xl font-bold ${severityTheme[level].text}`}>
+                    {result.severityCounts[level] ?? 0}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {localize('Vulnérabilités', 'Vulnerabilities')}
+                  </p>
                 </div>
               ))}
             </div>
@@ -657,8 +697,8 @@ export function QuickScanCard() {
               </h4>
               <p className="text-sm text-slate-500">
                 {localize(
-                  'Ou créez un compte pour débloquer toutes les recommandations.',
-                  'Or create an account to unlock every recommendation.'
+                  'Recevez un rapport PDF et suivez vos scans en temps réel.',
+                  'Receive a PDF report and track scans in real time.'
                 )}
               </p>
             </div>
@@ -693,8 +733,15 @@ export function QuickScanCard() {
                   {ctaStatus.message}
                 </p>
               )}
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-slate-500">
-                <Button variant="outline" size="sm" asChild>
+              <div className="pt-3 border-t border-slate-200 text-center space-y-2">
+                <p className="text-xs text-slate-500">
+                  {localize('Envie d’un suivi en continu ?', 'Need continuous monitoring?')}
+                </p>
+                <Button
+                  size="lg"
+                  className="mx-auto bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white px-6 shadow-lg"
+                  asChild
+                >
                   <Link href="/register">{localize('Créer un compte gratuitement', 'Create a free account')}</Link>
                 </Button>
               </div>

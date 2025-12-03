@@ -80,6 +80,8 @@ export type Ticket = {
   description: string;
   phone_number?: string | null;
   contact_email?: string | null;
+  attachment_url?: string | null;
+  attachment_name?: string | null;
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
   priority: 'low' | 'medium' | 'high';
   created_at: string;

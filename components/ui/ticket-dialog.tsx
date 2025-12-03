@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import { Button } from './button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from './dialog';
 import { Input } from './input';
@@ -17,6 +17,7 @@ export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void 
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -25,10 +26,11 @@ export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void 
     phone: '',
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     if (!user) return;
 
+    setFormError(null);
     setIsLoading(true);
     try {
       const phoneValue = formData.phone.trim();
@@ -51,6 +53,12 @@ export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void 
       onTicketCreated();
     } catch (error) {
       console.error('Error creating ticket:', error);
+      setFormError(
+        localize(
+          'Impossible de creer le ticket. Merci de reessayer.',
+          'Unable to create the ticket. Please try again.'
+        )
+      );
     } finally {
       setIsLoading(false);
     }
@@ -140,6 +148,7 @@ export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void 
               </SelectContent>
             </Select>
           </div>
+          {formError && <p className="text-sm text-red-600">{formError}</p>}
           <DialogFooter>
             <Button type="submit" disabled={isLoading}>
               {isLoading ? localize('Création...', 'Creating...') : localize('Créer le ticket', 'Create ticket')}

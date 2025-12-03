@@ -31,10 +31,41 @@ const sections = [
       'CyberScan detects the target CMS, offers quick (Light) or in-depth (Complete) scans, prioritizes findings, and delivers remediation-oriented dashboards and reports. All output must be interpreted by qualified security professionals.'
   },
   {
-    title: '5. Pricing and Payment',
-    body:
-      'Unless stated otherwise, prices are quoted in euros before tax and invoiced at purchase. Licenses or subscriptions start when the service is made available. Late payments may trigger legal interest and collection fees.'
-  },
+   title: '5. Pricing and Payment',
+  body: (
+    <>
+      <p>
+        Unless otherwise stated, prices are quoted in euros excluding tax and are billed at the time of purchase.
+        Licenses or subscriptions begin as soon as the service is made available. Late payments may result in
+        statutory interest and collection fees.
+      </p>
+
+      <p>
+        <strong>Subscription Terms:</strong> Subscriptions automatically renew at the end of each billing period
+        unless canceled by the customer before the renewal date. Any billing period that has begun remains due.
+      </p>
+
+      <p>
+        <strong>Free Trial:</strong> A free trial period of [X days] may be offered. Access to the service begins
+        immediately upon registration. At the end of the trial period, the customer will be automatically charged
+        according to the selected plan unless the subscription is canceled before the trial ends.
+      </p>
+
+      <p>
+        <strong>Refund Policy:</strong> Refunds are available only during the first month following the initial
+        purchase, within a 30-day window. No refunds are provided for subsequent billing periods (monthly or yearly).
+        No refund can be granted if scans, reports, credits, or platform resources have been consumed. Canceling a
+        subscription stops future renewals but does not entitle the customer to a refund for the current billing
+        period.
+      </p>
+
+      <p>
+        By accessing the service immediately after payment, the customer expressly agrees to waive their right of
+        withdrawal (right of revocation) in accordance with applicable consumer protection laws.
+      </p>
+    </>
+  ),
+},
   {
     title: '6. User Obligations',
     list: [

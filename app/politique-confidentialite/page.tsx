@@ -58,7 +58,7 @@ const sections = [
   {
     title: '9. Contact',
     body:
-      'Reach out at privacy@securas.fr or by using the contact form on the website. We will answer any privacy-related request as soon as possible.'
+      'Reach out at privacy@cyberscan.fr or by using the contact form on the website. We will answer any privacy-related request as soon as possible.'
   }
 ];
 
@@ -89,7 +89,7 @@ export default function PrivacyPolicyPage() {
         </section>
 
         <footer className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between text-sm text-slate-400">
-          <span>Questions? Email privacy@securas.fr.</span>
+          <span>Questions? Email privacy@cyberscan.fr.</span>
           <Link href="/register" className="text-blue-400 hover:text-blue-300 font-medium">
             Back to signup
           </Link>

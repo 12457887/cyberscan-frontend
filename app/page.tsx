@@ -37,31 +37,10 @@ function HomeContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const [publicStats, setPublicStats] = useState({ totalScans: 0, totalSites: 0 });
   const [statsLoading] = useState(false);
 
-  // Compact countdown
-  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [contactOpen, setContactOpen] = useState(false);
   const [contactForm, setContactForm] = useState({ name: '', email: '', message: '' });
   const [contactFeedback, setContactFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [contactLoading, setContactLoading] = useState(false);
-  // Countdown hook
-  useEffect(() => {
-    const target = new Date(`${new Date().getFullYear()}-11-28T23:59:59`);
-    const tick = () => {
-      const now = new Date();
-      const diff = Math.max(0, target.getTime() - now.getTime());
-
-      setTimeLeft({
-        days: Math.floor(diff / (1000 * 60 * 60 * 24)),
-        hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
-        minutes: Math.floor((diff / (1000 * 60)) % 60),
-        seconds: Math.floor((diff / 1000) % 60),
-      });
-    };
-
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Statistics animation
   useEffect(() => {
@@ -235,8 +214,8 @@ const dashboardFeatures = useMemo(
       label: localize("Facturation & Abonnements", "Billing & Subscription Manager"),
       title: localize("Automated Billing & Subscription Manager", "Automated Billing & Subscription Manager"),
       description: localize(
-        "Gestion automatisée de la facturation via Stripe : abonnements, essais gratuits, renouvellements, paiements récurrents, coupons, remises Black Friday, export des factures et reçus. Webhooks avancés gérant paiements réussis/échoués, remboursements, mises à jour de plan et changements de période. Support multi-devises, TVA internationale et paiements 3D Secure. Le système suit même les crédits, l’usage et envoie des notifications lors des renouvellements ou incidents de paiement.",
-        "Automated billing powered by Stripe: subscriptions, free trials, renewals, recurring payments, coupons, Black Friday discounts, invoice exports and receipts. Advanced webhooks handle successful/failed payments, refunds, plan updates and trial transitions. Supports multi-currency, international VAT and 3D Secure payments. The engine tracks credits, usage and sends notifications for renewals or payment issues."
+        "Gestion automatisée de la facturation via Stripe : abonnements, essais gratuits, renouvellements, paiements récurrents, coupons, export des factures et reçus. Webhooks avancés gérant paiements réussis/échoués, remboursements, mises à jour de plan et changements de période. Support multi-devises, TVA internationale et paiements 3D Secure. Le système suit même les crédits, l’usage et envoie des notifications lors des renouvellements ou incidents de paiement.",
+        "Automated billing powered by Stripe: subscriptions, free trials, renewals, recurring payments, coupons, invoice exports and receipts. Advanced webhooks handle successful/failed payments, refunds, plan updates and trial transitions. Supports multi-currency, international VAT and 3D Secure payments. The engine tracks credits, usage and sends notifications for renewals or payment issues."
       ),
       image: '/billing.png',
       imageWidth: 340,
@@ -350,6 +329,9 @@ const dashboardFeatures = useMemo(
               <Button variant="ghost" className="text-white hover:text-blue-400 px-2" asChild>
                 <Link href="#benefits">{localize('Bénéfices', 'Benefits')}</Link>
               </Button>
+              <Button variant="ghost" className="text-white hover:text-blue-400 px-2" asChild>
+                <Link href="/plans">{localize('Plans', 'Plans')}</Link>
+              </Button>
 
               <Button variant="ghost" className="text-white hover:text-blue-400 px-2" asChild>
                 <Link href="/login">{localize('Connexion', 'Sign in')}</Link>
@@ -362,58 +344,6 @@ const dashboardFeatures = useMemo(
           </div>
         </div>
       </nav>
-
-      {/* BLACK FRIDAY */}
-      <section className="bg-gradient-to-r from-indigo-700 via-purple-700 to-pink-600 text-white px-4 py-8">
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-
-            <div>
-              <p className="uppercase text-[10px] tracking-[0.25em] text-white/70">Black Friday</p>
-
-              <h2 className="text-2xl font-bold mt-1">
-                {localize('Offre limitée : -40% sur les plans Pro & Enterprise', 'Limited offer: 50% off plans')}
-              </h2>
-
-              <p className="mt-2 text-white/80 text-xs">
-                {localize(
-                  'Crédits bonus et onboarding prioritaire.',
-                  'Bonus credits & priority onboarding.'
-                )}
-              </p>
-            </div>
-
-            <Button size="sm" className="bg-white text-slate-900 hover:bg-white/90 px-4 py-2 text-xs" asChild>
-              <Link href="/plans">
-                {localize('Profiter de la promotion', 'Claim the deal')}
-              </Link>
-            </Button>
-          </div>
-
-          <div className="bg-white/10 border border-white/20 rounded-xl p-4 flex flex-col gap-4">
-            <div className="grid grid-cols-4 gap-3 text-center text-sm">
-              {[
-                { label: localize('Jours', 'Days'), value: timeLeft.days },
-                { label: localize('Heures', 'Hours'), value: timeLeft.hours },
-                { label: localize('Minutes', 'Minutes'), value: timeLeft.minutes },
-                { label: localize('Secondes', 'Seconds'), value: timeLeft.seconds },
-              ].map((item) => (
-                <div key={item.label} className="bg-slate-900/40 rounded-lg p-3">
-                  <div className="text-2xl font-bold">{String(item.value).padStart(2, '0')}</div>
-                  <div className="text-[10px] uppercase tracking-wide text-white/70">{item.label}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="h-1 rounded-full bg-slate-900/50 overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-pink-500 via-purple-400 to-blue-400"
-                style={{ width: `${Math.min(100, (timeLeft.seconds / 60) * 100)}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* HERO */}
       <main>
@@ -768,7 +698,7 @@ const dashboardFeatures = useMemo(
 
               <div className="mt-4 space-y-1 text-xs">
                 <p className="font-semibold text-white">Securas Technologies</p>
-                <p>contact@securas.fr</p>
+                <p>contact@cyberscan.fr</p>
                 <p>{localize('Assistance 24/7', '24/7 assistance')}</p>
               </div>
             </div>
@@ -922,8 +852,8 @@ const dashboardFeatures = useMemo(
             </div>
             <div className="flex flex-col md:flex-row md:items-center md:justify-between">
               <span>&copy; 2025 CyberScan. {localize('Tous droits réservés.', 'All rights reserved.')}</span>
-              <Link href="mailto:contact@securas.fr" className="mt-2 md:mt-0 hover:text-white">
-                contact@securas.fr
+              <Link href="mailto:contact@cyberscan.fr" className="mt-2 md:mt-0 hover:text-white">
+                contact@cyberscan.fr
               </Link>
             </div>
           </div>

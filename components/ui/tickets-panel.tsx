@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Paperclip } from 'lucide-react';
 import { Badge } from './badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card';
 import { TicketDialog } from './ticket-dialog';
@@ -152,7 +152,8 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
         ) : (
           tickets.map((ticket) => {
             const isExpanded = expandedTicketId === ticket.id;
-            const showToggle = (ticket.description?.length || 0) > 160 || !!ticket.phone_number;
+            const showToggle =
+              (ticket.description?.length || 0) > 160 || !!ticket.phone_number || !!ticket.attachment_url;
             return (
               <div key={ticket.id} className="rounded-lg border border-slate-200 p-3">
                 <div className="flex items-start justify-between gap-3">
@@ -219,6 +220,19 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
                           className="font-medium text-slate-900 hover:underline"
                         >
                           {ticket.phone_number}
+                        </a>
+                      </p>
+                    )}
+                    {ticket.attachment_url && (
+                      <p className="flex items-center gap-2 text-sm text-slate-700">
+                        <Paperclip className="h-4 w-4 text-slate-500" />
+                        <a
+                          href={ticket.attachment_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-semibold text-blue-600 hover:underline"
+                        >
+                          {ticket.attachment_name || localize('Télécharger la pièce jointe', 'Download attachment')}
                         </a>
                       </p>
                     )}
