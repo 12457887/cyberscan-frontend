@@ -49,6 +49,7 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
     features: [
       { fr: '20 crédits', en: '20 credits' },
       { fr: 'Scan automatique hebdomadaire', en: 'Weekly automatic scan' },
+      { fr: 'Détection CMS par IA', en: 'AI CMS detection' },
       { fr: 'Rapports détaillés', en: 'Detailed reports' },
       { fr: 'Alertes email', en: 'Email alerts' },
       { fr: 'Support standard', en: 'Standard support' },
@@ -67,6 +68,8 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
     features: [
       { fr: '50 crédits', en: '50 credits' },
       { fr: 'Analyse quotidienne', en: 'Daily analysis' },
+      { fr: 'Détection CMS par IA', en: 'AI CMS detection' },
+      { fr: 'Jusqu’à 5 scans simultanés', en: 'Up to 5 concurrent scans' },
       { fr: 'Rapports avancés', en: 'Advanced reports' },
       { fr: 'Dashboard complet', en: 'Full dashboard' },
       { fr: 'Support prioritaire', en: 'Priority support' },
@@ -79,11 +82,13 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
     period: { fr: '/mois', en: '/month' },
     icon: Building2,
     description: { fr: '', en: '' },
-    creditsLimit: 999999,
-    creditsLabel: { fr: 'Illimités', en: 'Unlimited' },
+    creditsLimit: 200,
+    creditsLabel: { fr: '200', en: '200' },
     features: [
-      { fr: 'Crédits illimités', en: 'Unlimited credits' },
+      { fr: '200 crédits', en: '200 credits' },
       { fr: 'Accès à toutes les fonctionnalités', en: 'Access to all features' },
+      { fr: 'Détection CMS par IA', en: 'AI CMS detection' },
+      { fr: 'Jusqu’à 10 scans simultanés', en: 'Up to 10 concurrent scans' },
       { fr: 'Rapports complets', en: 'Full reports' },
       { fr: 'Support dédié', en: 'Dedicated support' },
     ],

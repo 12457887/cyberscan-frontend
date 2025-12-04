@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+const backendUrl =
+  process.env.BACKEND_URL ||
+  (process.env.NODE_ENV !== 'production' ? 'http://localhost:8000' : undefined) ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  'http://localhost:8000';
+const backendKey = process.env.BACKEND_API_KEY || process.env.NEXT_PUBLIC_BACKEND_API_KEY;
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -14,9 +21,42 @@ if (!serviceRoleKey) {
 
 const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
+async function forwardPasswordReset(body: any) {
+  if (!body?.email) {
+    return NextResponse.json({ error: 'Email is required.' }, { status: 400 });
+  }
+
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (backendKey) {
+      headers['x-backend-api-key'] = backendKey;
+    }
+
+    const res = await fetch(`${backendUrl}/auth/send-password-reset`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email: body.email }),
+    });
+
+    const payload = await res.json();
+    return NextResponse.json(payload, { status: res.status });
+  } catch (error: any) {
+    console.error('Password reset proxy error:', error);
+    return NextResponse.json(
+      { error: "Impossible d'envoyer le code de réinitialisation." },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    if (body?.action === 'password-reset') {
+      return forwardPasswordReset(body);
+    }
     const { userId, email, fullName, phoneNumber } = body || {};
 
     if (!userId || !email) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -114,8 +114,20 @@ export function QuickScanCard() {
   const [ctaEmail, setCtaEmail] = useState('');
   const [ctaStatus, setCtaStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [ctaLoading, setCtaLoading] = useState(false);
+  const [unlockName, setUnlockName] = useState('');
+  const [unlockEmail, setUnlockEmail] = useState('');
+  const [unlockStatus, setUnlockStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [unlockLoading, setUnlockLoading] = useState(false);
+  const [resultUnlocked, setResultUnlocked] = useState(false);
+  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [lastScannedUrl, setLastScannedUrl] = useState('');
   const [termsAccepted, setTermsAccepted] = useState(false);
+
+  useEffect(() => () => {
+    if (redirectTimer.current) {
+      clearTimeout(redirectTimer.current);
+    }
+  }, []);
 
   const pickHighest = (current: Severity | null, candidate: Severity | null) => {
     if (!candidate) return current;
@@ -201,6 +213,10 @@ export function QuickScanCard() {
     setReportMongoId(null);
     setCtaEmail('');
     setCtaStatus(null);
+    setResultUnlocked(false);
+    setUnlockName('');
+    setUnlockEmail('');
+    setUnlockStatus(null);
 
     if (!url.trim()) {
       setError(localize('Merci de saisir une URL valide.', 'Please enter a valid URL.'));
@@ -312,6 +328,7 @@ export function QuickScanCard() {
       };
 
       setResult(combinedResult);
+      setResultUnlocked(false);
 
       const loggedId = await logFreeScan({
         url: normalizedUrl,
@@ -340,25 +357,16 @@ export function QuickScanCard() {
     }
   };
 
-  const handleCtaSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    setCtaStatus(null);
-    if (!ctaEmail.trim()) {
-      setCtaStatus({ type: 'error', message: localize('Merci de saisir un email.', 'Please enter an email.') });
-      return;
-    }
+  const sendReportEmail = async (emailValue: string) => {
     if (!reportScanId && !reportMongoId) {
-      setCtaStatus({
-        type: 'error',
-        message: localize(
+      throw new Error(
+        localize(
           "Relancez un scan gratuit pour générer le rapport avant de l'envoyer.",
           'Please rerun a quick scan so the report can be generated before sending.'
-        ),
-      });
-      return;
+        )
+      );
     }
-    setCtaLoading(true);
-    const emailValue = ctaEmail.trim();
+
     const payload = {
       id: freeScanId,
       url: freeScanId ? undefined : lastScannedUrl || url,
@@ -369,46 +377,48 @@ export function QuickScanCard() {
       severity_counts: result?.severityCounts,
     };
     const id = await logFreeScan(payload);
-    if (id) {
-      setFreeScanId(id);
-      try {
-        const response = await fetch('/service/free-scan-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: emailValue,
-            url: lastScannedUrl || url,
-            cms_label: result?.cmsLabel ?? null,
-            risk_level: result?.riskLevel ?? null,
-            scan_id: reportScanId,
-            mongo_report_id: reportMongoId,
-          }),
-        });
-        if (!response.ok) {
-          let message = localize("Impossible d'envoyer le rapport.", 'Unable to send the report.');
-          const raw = await response.text();
-          try {
-            const parsed = raw ? JSON.parse(raw) : null;
-            message = parsed?.detail || parsed?.message || parsed?.error || message;
-          } catch {
-            if (raw && !/<html|<!doctype/i.test(raw)) {
-              message = raw;
-            }
+    if (!id) {
+      throw new Error(localize('Impossible de sauvegarder votre demande.', 'Unable to save your request.'));
+    }
+    setFreeScanId(id);
+
+    const response = await fetch('/service/free-scan-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: emailValue,
+        url: lastScannedUrl || url,
+        cms_label: result?.cmsLabel ?? null,
+        risk_level: result?.riskLevel ?? null,
+        scan_id: reportScanId,
+        mongo_report_id: reportMongoId,
+      }),
+    });
+    if (!response.ok) {
+        let message = localize("Impossible d'envoyer le rapport.", 'Unable to send the report.');
+        const raw = await response.text();
+        try {
+          const parsed = raw ? JSON.parse(raw) : null;
+          message = parsed?.detail || parsed?.message || parsed?.error || message;
+        } catch {
+          if (raw && !/<html|<!doctype/i.test(raw)) {
+            message = raw;
           }
-          throw new Error(message);
         }
-      } catch (sendError: any) {
-        console.error('Unable to send CTA email:', sendError);
-        setCtaStatus({
-          type: 'error',
-          message:
-            sendError instanceof Error
-              ? sendError.message
-              : localize("Impossible d'envoyer le rapport.", 'Unable to send the report.'),
-        });
-        setCtaLoading(false);
-        return;
-      }
+        throw new Error(message);
+    }
+  };
+
+  const handleCtaSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setCtaStatus(null);
+    if (!ctaEmail.trim()) {
+      setCtaStatus({ type: 'error', message: localize('Merci de saisir un email.', 'Please enter an email.') });
+      return;
+    }
+    setCtaLoading(true);
+    try {
+      await sendReportEmail(ctaEmail.trim());
       setCtaStatus({
         type: 'success',
         message: localize(
@@ -417,13 +427,55 @@ export function QuickScanCard() {
         ),
       });
       setCtaEmail('');
-    } else {
+    } catch (err: any) {
       setCtaStatus({
         type: 'error',
-        message: localize('Impossible de sauvegarder votre demande.', 'Unable to save your request.'),
+        message: err instanceof Error ? err.message : localize("Impossible d'envoyer le rapport.", 'Unable to send the report.'),
       });
+    } finally {
+      setCtaLoading(false);
     }
-    setCtaLoading(false);
+  };
+
+  const handleUnlockSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setUnlockStatus(null);
+    if (!unlockName.trim()) {
+      setUnlockStatus({
+        type: 'error',
+        message: localize('Merci de renseigner votre nom complet.', 'Please enter your full name.'),
+      });
+      return;
+    }
+    if (!unlockEmail.trim()) {
+      setUnlockStatus({
+        type: 'error',
+        message: localize('Merci de renseigner votre email professionnel.', 'Please enter your email.'),
+      });
+      return;
+    }
+    setUnlockLoading(true);
+    try {
+      await sendReportEmail(unlockEmail.trim());
+      setResultUnlocked(true);
+      setUnlockStatus({
+        type: 'success',
+        message: localize('Rapport envoyé ! Résultats débloqués.', 'Report sent! Results unlocked.'),
+      });
+      setUnlockName('');
+      setUnlockEmail('');
+      if (redirectTimer.current) {
+        clearTimeout(redirectTimer.current);
+      }
+      redirectTimer.current = setTimeout(() => setUnlockStatus(null), 5000);
+    } catch (err: any) {
+      setUnlockStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : localize("Impossible d'envoyer le rapport.", 'Unable to send the report.'),
+      });
+    } finally {
+      setUnlockLoading(false);
+    }
   };
 
   const riskBadgeClass = (risk: Severity) => {
@@ -511,13 +563,6 @@ export function QuickScanCard() {
           </Button>
         </form>
 
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-slate-500">
-          <div className="flex items-center gap-1">
-            <Lock className="w-4 h-4" />
-            {localize('Analyse 100% gratuite et confidentielle', '100% free and confidential analysis')}
-          </div>
-        </div>
-
         <label
           htmlFor="quick-scan-permission"
           className="flex items-center gap-3 text-[11px] leading-snug text-slate-500"
@@ -543,6 +588,11 @@ export function QuickScanCard() {
           </p>
         </label>
 
+        <div className="flex items-center gap-1 text-xs text-slate-500">
+          <Lock className="w-4 h-4" />
+          {localize('Analyse 100% gratuite et confidentielle', '100% free and confidential analysis')}
+        </div>
+
         {loading && (
           <div className="rounded-2xl border border-blue-100 bg-white/90 shadow-inner p-6 text-center space-y-3">
             <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
@@ -566,12 +616,17 @@ export function QuickScanCard() {
         )}
 
         {result && (
-          <div className="bg-white rounded-2xl p-5 space-y-4 border border-slate-100 shadow-inner">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">
-                  {localize('Niveau de risque', 'Risk level')}
-                </p>
+          <div>
+            <div
+              className={`bg-white rounded-2xl p-5 space-y-4 border border-slate-100 shadow-inner transition-all duration-300 ${
+                resultUnlocked ? '' : 'blur-sm opacity-70'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    {localize('Niveau de risque', 'Risk level')}
+                  </p>
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   {result.riskLevel ? (
                     <Badge className={`text-sm ${riskBadgeClass(result.riskLevel)}`}>
@@ -631,48 +686,28 @@ export function QuickScanCard() {
             </div>
 
             {analyzerDetails && (
-              <div className="space-y-3">
-                <div className="grid sm:grid-cols-3 gap-3 text-sm text-slate-600">
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                    <p className="text-xs uppercase text-slate-500">{localize('Disponibilité', 'Availability')}</p>
-                    <p className="font-semibold mt-1">
-                      {analyzerDetails.error
-                        ? localize('Injoignable', 'Unreachable')
-                        : analyzerDetails.online
-                        ? localize('En ligne', 'Online')
-                        : localize('Hors ligne', 'Offline')}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                    <p className="text-xs uppercase text-slate-500">{localize('Adresse IP', 'IP address')}</p>
-                    <p className="font-semibold mt-1">
-                      {analyzerDetails.ip || localize('Non détectée', 'Not detected')}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                    <p className="text-xs uppercase text-slate-500">{localize('Statut HTTP', 'HTTP status')}</p>
-                    <p className="font-semibold mt-1">
-                      {analyzerDetails.status_code ? analyzerDetails.status_code : localize('N/A', 'N/A')}
-                    </p>
-                  </div>
+              <div className="grid sm:grid-cols-3 gap-3 text-sm text-slate-600">
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                  <p className="text-xs uppercase text-slate-500">{localize('Disponibilité', 'Availability')}</p>
+                  <p className="font-semibold mt-1">
+                    {analyzerDetails.error
+                      ? localize('Injoignable', 'Unreachable')
+                      : analyzerDetails.online
+                      ? localize('En ligne', 'Online')
+                      : localize('Hors ligne', 'Offline')}
+                  </p>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                  <p className="text-xs uppercase text-slate-500">
-                    {localize('Technologies détectées', 'Detected technologies')}
+                  <p className="text-xs uppercase text-slate-500">{localize('Adresse IP', 'IP address')}</p>
+                  <p className="font-semibold mt-1">
+                    {analyzerDetails.ip || localize('Non détectée', 'Not detected')}
                   </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {(analyzerDetails.technologies && analyzerDetails.technologies.length > 0
-                      ? analyzerDetails.technologies
-                      : [localize('Inconnues', 'Unknown')]
-                    ).map((tech, index) => (
-                      <span
-                        key={`${tech}-${index}`}
-                        className="text-xs font-medium px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600"
-                      >
-                        {tech}
-                      </span>
-                    ))}
-                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                  <p className="text-xs uppercase text-slate-500">{localize('Statut HTTP', 'HTTP status')}</p>
+                  <p className="font-semibold mt-1">
+                    {analyzerDetails.status_code ? analyzerDetails.status_code : localize('N/A', 'N/A')}
+                  </p>
                 </div>
               </div>
             )}
@@ -683,10 +718,80 @@ export function QuickScanCard() {
                 <span className="font-semibold text-slate-700">{result.scanTime}s</span>
               </p>
             )}
+            </div>
+
           </div>
         )}
 
-        {result && (
+        {result && !resultUnlocked && (
+          <div className="mt-6 bg-white border border-blue-100 rounded-2xl p-6 shadow-xl text-center space-y-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.25em] text-blue-500">
+                {localize('Débloquez votre rapport', 'Unlock your report')}
+              </p>
+              <h4 className="text-lg font-semibold text-slate-900">
+                {localize('Entrez vos informations pour afficher les résultats', 'Enter your details to view the results')}
+              </h4>
+              <p className="text-xs text-slate-500">
+                {localize(
+                  'Nous vous envoyons immédiatement le rapport détaillé par email.',
+                  'We will immediately email you the detailed report.'
+                )}
+              </p>
+            </div>
+            <form onSubmit={handleUnlockSubmit} className="grid gap-3 text-left">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-600" htmlFor="unlock-name">
+                  {localize('Nom complet', 'Full name')}
+                </label>
+                <Input
+                  id="unlock-name"
+                  type="text"
+                  placeholder={localize('Ex. Marie Dupont', 'e.g. Jane Doe')}
+                  value={unlockName}
+                  onChange={(event) => setUnlockName(event.target.value)}
+                  disabled={unlockLoading}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-600" htmlFor="unlock-email">
+                  Email
+                </label>
+                <Input
+                  id="unlock-email"
+                  type="email"
+                  placeholder="you@company.com"
+                  value={unlockEmail}
+                  onChange={(event) => setUnlockEmail(event.target.value)}
+                  disabled={unlockLoading}
+                  required
+                />
+              </div>
+              {unlockStatus && (
+                <p
+                  className={`text-xs ${
+                    unlockStatus.type === 'success' ? 'text-emerald-600' : 'text-red-600'
+                  }`}
+                >
+                  {unlockStatus.message}
+                </p>
+              )}
+              <Button type="submit" className="w-full" disabled={unlockLoading}>
+                {unlockLoading ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {localize('Envoi...', 'Sending...')}
+                  </span>
+                ) : (
+                  localize('Débloquer et recevoir le rapport', 'Unlock and receive the report')
+                )}
+              </Button>
+            </form>
+          </div>
+        )}
+
+        {result && resultUnlocked && (
           <div className="mt-4 bg-white/95 border border-blue-100 rounded-2xl p-5 shadow-lg space-y-4">
             <div className="text-center space-y-1">
               <p className="text-sm uppercase tracking-[0.25em] text-blue-500">

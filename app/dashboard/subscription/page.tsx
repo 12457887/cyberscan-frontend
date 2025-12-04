@@ -79,6 +79,15 @@ export default function SubscriptionPage() {
     }
     return new Date(new Date().getTime() + CYCLE_DURATION_MS);
   };
+  const nextExpiryDate = useMemo(() => {
+    if (!subscription) return null;
+    if (subscription.expires_at) {
+      const date = new Date(subscription.expires_at);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    const next = getNextCycleEndDate(subscription);
+    return next ?? null;
+  }, [subscription]);
 
   const handleScheduleCancellation = async () => {
     if (!user || !subscription) return;
@@ -185,6 +194,9 @@ export default function SubscriptionPage() {
     if (Number.isNaN(date.getTime())) return isoDate;
     return date.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
   };
+  const formattedExpiryLabel = nextExpiryDate
+    ? formatDate(nextExpiryDate.toISOString())
+    : localize('Non défini', 'Not set');
 
   useEffect(() => {
     if (user) {
@@ -485,22 +497,12 @@ export default function SubscriptionPage() {
         throw new Error(message);
       }
 
-      const amountLabel =
-        typeof data?.amountCents === 'number'
-          ? `${(data.amountCents / 100).toFixed(2)} ${String(data?.currency || 'EUR').toUpperCase()}`
-          : null;
-
       setStatusMessage({
         type: 'success',
-        text: amountLabel
-          ? localize(
-              `Remboursement Stripe initié (${amountLabel}).`,
-              `Stripe refund initiated (${amountLabel}).`
-            )
-          : localize(
-              'Votre demande de remboursement Stripe a été transmise.',
-              'Your refund request has been submitted to Stripe.'
-            ),
+        text: localize(
+          'Votre demande a été transmise à notre équipe. Vous serez notifié après vérification.',
+          'Your request has been sent to our team. You will be notified once it has been reviewed.'
+        ),
       });
 
       await loadInvoices();
@@ -848,7 +850,7 @@ export default function SubscriptionPage() {
                   )}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-6 md:grid-cols-3">
+              <CardContent className="grid gap-6 md:grid-cols-4">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-300">{localize('Statut', 'Status')}</p>
                   <Badge className={`mt-2 border border-white/20 ${subscription.status === 'active' ? 'bg-emerald-500/20 text-emerald-100' : 'bg-white/10 text-white'}`}>
@@ -868,6 +870,12 @@ export default function SubscriptionPage() {
                   <p className="mt-2 text-sm text-slate-200">
                     {subscription.updated_at ? new Date(subscription.updated_at).toLocaleDateString(locale) : '—'}
                   </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-300">
+                    {localize('Expiration / prochaine échéance', 'Expiration / next billing')}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-200">{formattedExpiryLabel}</p>
                 </div>
               </CardContent>
             </Card>

@@ -96,6 +96,27 @@ export type Ticket = {
   creator_email?: string | null;
 };
 
+export type RefundRequest = {
+  id: string;
+  user_id: string;
+  invoice_id?: string | null;
+  invoice_number?: string | null;
+  stripe_invoice_id?: string | null;
+  stripe_payment_intent_id?: string | null;
+  stripe_charge_id?: string | null;
+  stripe_checkout_session_id?: string | null;
+  amount_cents?: number | null;
+  currency?: string | null;
+  reason?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  admin_id?: string | null;
+  decision_reason?: string | null;
+  stripe_refund_id?: string | null;
+  decided_at?: string | null;
+  created_at: string;
+  profiles?: { email: string | null; full_name: string | null } | null;
+};
+
 export type ScheduledScan = {
   id: string;
   user_id: string;

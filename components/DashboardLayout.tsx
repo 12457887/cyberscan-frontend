@@ -103,7 +103,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="flex justify-between h-16">
             <div className="flex items-center">
               <div className="flex-shrink-0 flex items-center gap-3">
-                <Logo width={80} height={80} className="!justify-start" />
+                <Logo width={65} height={65} className="!justify-start" />
                 <span className="text-xl font-bold text-white">{t('common.appName')}</span>
               </div>
             </div>

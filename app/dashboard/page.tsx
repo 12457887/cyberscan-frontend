@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { supabase, Credits, Scan, Alert, Ticket } from '@/lib/supabase';
+import { supabase, Credits, Scan, Alert, Ticket, RefundRequest } from '@/lib/supabase';
 import { TicketsPanel } from '@/components/ui/tickets-panel';
+import { RefundRequestsPanel } from '@/components/ui/refund-requests-panel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CreditCard, Activity, AlertTriangle, TrendingUp, BarChart3, AlertCircle } from 'lucide-react';
@@ -138,8 +139,12 @@ export default function DashboardPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [vulnerabilityTrend, setVulnerabilityTrend] = useState<VulnerabilityTrendPoint[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [refundRequests, setRefundRequests] = useState<RefundRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [refundError, setRefundError] = useState<string | null>(null);
+  const [refundLoading, setRefundLoading] = useState(false);
+  const [refundActionId, setRefundActionId] = useState<string | null>(null);
 
   const isAdminUser = profile?.role === 'admin';
   const planNames = useMemo(
@@ -196,6 +201,11 @@ export default function DashboardPage() {
   const loadDashboardData = async () => {
     if (!user) return;
 
+    if (isAdminUser) {
+      setRefundLoading(true);
+      setRefundError(null);
+    }
+
     try {
       setLoadError(null);
       const today = new Date();
@@ -219,6 +229,7 @@ export default function DashboardPage() {
       let scansData = scansRes.data || [];
 
       let ticketsData: Ticket[] = [];
+      let refundsData: RefundRequest[] = [];
       if (isAdminUser) {
         try {
           const {
@@ -238,6 +249,24 @@ export default function DashboardPage() {
               ticketsData = json?.tickets ?? [];
             } else {
               console.error('Erreur récupération tickets admin:', await res.text());
+            }
+
+            const refundsRes = await fetch('/service/refund-requests', {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            });
+            if (refundsRes.ok) {
+              const json = await refundsRes.json();
+              refundsData = json?.requests ?? [];
+            } else {
+              setRefundError(
+                localize(
+                  'Impossible de charger les demandes de remboursement.',
+                  'Unable to load refund requests.'
+                )
+              );
+              console.error('Erreur récupération refunds admin:', await refundsRes.text());
             }
           } else {
             console.error('Impossible de récupérer le token admin pour les tickets');
@@ -272,6 +301,10 @@ export default function DashboardPage() {
       }
 
       setTickets(ticketsData);
+      if (isAdminUser) {
+        setRefundRequests(refundsData);
+        setRefundLoading(false);
+      }
 
       if (!scansData.length) {
         const fallback = await supabase
@@ -327,8 +360,50 @@ export default function DashboardPage() {
       setLoadError(
         localize('Impossible de charger toutes les données du tableau de bord.', 'Unable to load every dashboard metric.')
       );
+      if (isAdminUser) {
+        setRefundLoading(false);
+        if (!refundError) {
+          setRefundError(
+            localize('Impossible de charger les demandes de remboursement.', 'Unable to load refund requests.')
+          );
+        }
+      }
     } finally {
       setLoading(false);
+      if (isAdminUser) {
+        setRefundLoading(false);
+      }
+    }
+  };
+
+  const handleRefundDecision = async (requestId: string, decision: 'approve' | 'reject', note?: string) => {
+    try {
+      setRefundActionId(requestId);
+      const response = await fetch('/service/refund-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId, decision, note }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          payload?.detail || payload?.error || localize('Action impossible.', 'Unable to process this request.');
+        throw new Error(message);
+      }
+      window.alert(
+        decision === 'approve'
+          ? localize('Remboursement approuvé.', 'Refund approved.')
+          : localize('Demande rejetée.', 'Request rejected.')
+      );
+      await loadDashboardData();
+    } catch (error: any) {
+      console.error('Refund decision error:', error);
+      window.alert(
+        error?.message ||
+          localize('Impossible de traiter cette demande de remboursement.', 'Unable to update this refund request.')
+      );
+    } finally {
+      setRefundActionId(null);
     }
   };
 
@@ -467,6 +542,16 @@ export default function DashboardPage() {
           )}
 
           <TicketsPanel tickets={tickets} onTicketCreated={loadDashboardData} isAdmin={isAdminUser} />
+
+          {isAdminUser && (
+            <RefundRequestsPanel
+              requests={refundRequests}
+              loading={refundLoading}
+              error={refundError}
+              onDecision={handleRefundDecision}
+              actionRequestId={refundActionId}
+            />
+          )}
 
           {loading && (
             <Card>

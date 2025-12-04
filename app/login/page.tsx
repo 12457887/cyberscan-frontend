@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2 } from 'lucide-react';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import Link from 'next/link';
-import { Logo } from '@/components/Logo';
+import Image from 'next/image';
 import { GoogleReCaptchaProvider, useGoogleReCaptcha } from 'react-google-recaptcha-v3';
 
 const OTP_COOLDOWN_MS = 60_000;
@@ -172,8 +172,17 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
         {/* ---------------------------- */}
         {/* HEADER */}
         {/* ---------------------------- */}
-        <CardHeader className="text-center space-y-3">
-          <Logo width={150} height={150} />
+        <CardHeader className="text-center space-y-4">
+          <div className="flex justify-center">
+            <Image
+              src="/cyberscan-logo.png"
+              alt="CyberScan"
+              width={200}
+              height={200}
+              className="object-contain"
+              priority
+            />
+          </div>
 
           <CardDescription className="text-muted-foreground">
             {localize('Connexion à votre compte', 'Sign in to your account')}

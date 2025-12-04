@@ -139,14 +139,14 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
       <Card className="w-full max-w-md">
-        <CardHeader className="space-y-4 text-center">
+        <CardHeader className="space-y-5 text-center">
           <div className="flex justify-center">
             <Image
               src="/cyberscan-logo.png"
               alt="CyberScan Logo"
-              width={150}
-              height={150}
-              className="rounded-lg"
+              width={200}
+              height={200}
+              className="object-contain"
               priority
             />
           </div>

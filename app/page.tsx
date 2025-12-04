@@ -14,23 +14,21 @@ import {
   CheckCircle,
   AlertTriangle,
   Crown,
-  Gem,
-  Search,
-  RefreshCw,
   LayoutDashboard,
   BellRing,
   FileText,
 } from 'lucide-react';
 
-import { useLanguage } from '@/contexts/LanguageContext';
+import { Language, useLanguage } from '@/contexts/LanguageContext';
 import { QuickScanCard } from '@/components/QuickScanCard';
 import { GoogleReCaptchaProvider, useGoogleReCaptcha } from 'react-google-recaptcha-v3';
+import { PLAN_DEFINITIONS } from '@/lib/plans';
 
 const showPricing = false;
 
 function HomeContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const { executeRecaptcha } = useGoogleReCaptcha();
-  const { choose } = useLanguage();
+  const { choose, language, setLanguage } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
 
   const targetStats = { totalScans: 12840, totalSites: 6420 };
@@ -57,56 +55,55 @@ function HomeContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
     return () => clearInterval(interval);
   }, []);
 
-  // FEATURE GROUPS
-  const overviewFeatures = useMemo(
+  const secureFeatureCards = useMemo(
     () => [
       {
-        title: localize('Technologie de scan approfondie', 'Deep scan technology'),
+        emoji: '🤖',
+        title: localize('Détection par IA', 'AI-powered detection'),
         description: localize(
-          'Détection IA et moteurs propriétaires.',
-          'AI-driven detection with proprietary engines.'
+          'Moteur propriétaire combinant IA, signatures CVE et heuristiques pour déceler les menaces invisibles aux autres outils.',
+          'Proprietary engine blending AI, CVE signatures and heuristics to reveal threats other scanners miss.'
         ),
-        icon: Gem,
       },
       {
+        emoji: '⚡',
         title: localize('Scans instantanés', 'Instant scans'),
         description: localize(
-          'Diagnostic immédiat en un clic.',
-          'Instant diagnostics with one click.'
+          'Diagnostic complet en moins de 30 secondes. Aucun compte requis pour votre premier scan gratuit.',
+          'Complete diagnosis in under 30 seconds. No account required for your first free scan.'
         ),
-        icon: Search,
       },
       {
-        title: localize('Automatisation totale', 'Automatic scans'),
+        emoji: '🔔',
+        title: localize('Alertes en temps réel', 'Real-time alerts'),
         description: localize(
-          'Programmation quotidienne ou hebdo.',
-          'Automated daily/weekly scheduling.'
+          'Notifications instantanées par e-mail ou push dès qu’une nouvelle vulnérabilité apparaît.',
+          'Instant email or push notifications whenever a new vulnerability shows up.'
         ),
-        icon: RefreshCw,
       },
       {
-        title: localize('Pilotage unifié', 'Unified dashboard'),
+        emoji: '📊',
+        title: localize('Rapports détaillés', 'Detailed reports'),
         description: localize(
-          'Tous vos sites au même endroit.',
-          'Centralize all sites in one place.'
+          'Cartographie complète des risques avec priorisation automatique des actions à mener.',
+          'Complete risk mapping with automated prioritization of remediation tasks.'
         ),
-        icon: LayoutDashboard,
       },
       {
-        title: localize('Alertes intelligentes', 'Smart notifications'),
+        emoji: '🔁',
+        title: localize('Scans automatiques', 'Automated scans'),
         description: localize(
-          'Alertes dès qu’une faille critique apparaît.',
-          'Alerts instantly when issues appear.'
+          'Planifiez des analyses quotidiennes, hebdomadaires ou mensuelles pour rester protégé en continu.',
+          'Schedule daily, weekly or monthly scans to stay protected continuously.'
         ),
-        icon: BellRing,
       },
       {
-        title: localize('Rapports avancés', 'Advanced reports'),
+        emoji: '🎯',
+        title: localize('Dashboard centralisé', 'Centralized dashboard'),
         description: localize(
-          'Rapports avec priorisation automatique.',
-          'Reports with automated prioritization.'
+          'Pilotez tous vos sites depuis une seule interface. Idéal pour agences et MSSP.',
+          'Control every site from one interface — perfect for agencies and MSSPs.'
         ),
-        icon: FileText,
       },
     ],
     [localize]
@@ -126,6 +123,52 @@ function HomeContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
     localize('Technologie de scan avancée.', 'Advanced deep-scan technology.'),
     localize('Accès immédiat à votre historique.', 'Instant access to your scan history.'),
   ];
+
+  const parsePriceValue = (price: string) => {
+    const match = price.match(/[\d.,]+/);
+    if (!match) return 0;
+    return parseFloat(match[0].replace(',', '.'));
+  };
+
+  const homepagePlans = useMemo(
+    () =>
+      PLAN_DEFINITIONS.map((plan) => ({
+        id: plan.id,
+        name: localize(plan.name.fr, plan.name.en).trim(),
+        price: plan.price,
+        period: plan.period ? localize(plan.period.fr, plan.period.en) : localize('/mois', '/month'),
+        features: (plan.features || []).slice(0, 5).map((feature) => localize(feature.fr, feature.en)),
+        highlight: plan.popular || plan.id === 'pro',
+        oldPrice:
+          parsePriceValue(plan.price) > 0 ? `${Math.max(1, Math.round(parsePriceValue(plan.price) * 2))}€` : null,
+        ctaHref: '/register',
+        ctaLabel: localize('Commencer maintenant', 'Start now'),
+      })),
+    [localize]
+  );
+
+  const whiteLabelPlan = useMemo(
+    () => ({
+      id: 'white-label',
+      name: localize('White Label', 'White Label'),
+      price: localize('Sur mesure', 'Custom'),
+      period: '',
+      features: [
+        localize('Branding complet (logo, couleurs, sous-domaine)', 'Full branding (logo, colors, subdomain)'),
+        localize('Rapports PDF en marque blanche', 'White-label PDF reports'),
+        localize('Accès API illimité', 'Unlimited API access'),
+        localize('Support dédié & onboarding prioritaire', 'Dedicated support & priority onboarding'),
+        localize('Contrat multi-clients (agences, MSSP)', 'Multi-client contract (agencies, MSSPs)'),
+      ],
+      highlight: false,
+      oldPrice: null,
+      ctaHref: 'mailto:support@cyberscan.fr',
+      ctaLabel: localize('Contacter le support', 'Contact support'),
+    }),
+    [localize]
+  );
+
+  const pricingCards = useMemo(() => [...homepagePlans, whiteLabelPlan], [homepagePlans, whiteLabelPlan]);
 
   // Dashboard detailed feature list
 const dashboardFeatures = useMemo(
@@ -330,7 +373,7 @@ const dashboardFeatures = useMemo(
                 <Link href="#benefits">{localize('Bénéfices', 'Benefits')}</Link>
               </Button>
               <Button variant="ghost" className="text-white hover:text-blue-400 px-2" asChild>
-                <Link href="/plans">{localize('Plans', 'Plans')}</Link>
+                <Link href="/#plans-preview">{localize('Plans', 'Plans')}</Link>
               </Button>
 
               <Button variant="ghost" className="text-white hover:text-blue-400 px-2" asChild>
@@ -340,6 +383,20 @@ const dashboardFeatures = useMemo(
               <Button className="bg-blue-600 hover:bg-blue-700 px-3 py-1 text-xs" asChild>
                 <Link href="/register">{localize("S'inscrire", 'Sign up')}</Link>
               </Button>
+              <div className="flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 px-2 py-1">
+                {(['fr', 'en'] as Language[]).map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={() => setLanguage(code)}
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors ${
+                      language === code ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {code.toUpperCase()}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -388,43 +445,35 @@ const dashboardFeatures = useMemo(
           </div>
         </section>
         {/* FEATURES */}
-        <section id="features" className="py-14 px-4 bg-white text-slate-900 text-sm">
-          <div className="max-w-6xl mx-auto text-center space-y-3">
-            <p className="text-[11px] uppercase tracking-[0.25em] text-slate-500">
-              {localize('Le scanner le plus complet', 'The most comprehensive scanner')}
+        <section id="features" className="py-16 px-4 bg-white text-slate-900 text-sm">
+          <div className="max-w-6xl mx-auto text-center space-y-3 mb-10">
+            <p className="text-[11px] uppercase tracking-[0.25em] text-blue-600">
+              {localize('Une technologie de pointe pour votre sécurité', 'Cutting-edge technology for your security')}
             </p>
 
-            <h2 className="text-2xl font-bold">
-              {localize('Protégez vos CMS critiques facilement.', 'Protect your critical CMS with ease.')}
+            <h2 className="text-3xl font-bold">
+              {localize('Tout est inclus pour garder vos CMS sous contrôle', 'Everything you need to keep your CMS secure')}
             </h2>
 
-            <p className="text-slate-600 max-w-2xl mx-auto text-sm">
+            <p className="text-slate-500 max-w-3xl mx-auto text-xs leading-relaxed">
               {localize(
-                "Une plateforme pensée pour automatiser l'analyse, prioriser les risques et garder le contrôle.",
-                'A platform built to automate analysis, prioritize risks, and stay in control.'
+                'CyberScan combine intelligence artificielle, signatures CVE et analyse dynamique pour anticiper les attaques.',
+                'CyberScan blends artificial intelligence, CVE signatures, and dynamic analysis to stay ahead of attackers.'
               )}
             </p>
           </div>
 
-          <div className="max-w-6xl mx-auto mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {overviewFeatures.map((feature) => {
-              const Icon = feature.icon;
-
-              return (
-                <Card key={feature.title} className="border-slate-200 shadow-sm h-full">
-                  <CardContent className="p-5 flex flex-col gap-3">
-                    <span className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
-                      <Icon className="w-5 h-5" />
-                    </span>
-
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-900">{feature.title}</h3>
-                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">{feature.description}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+          <div className="max-w-5xl mx-auto grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {secureFeatureCards.map((feature) => (
+              <div
+                key={feature.title as string}
+                className="rounded-3xl border border-slate-800 bg-gradient-to-br from-[#111d3a] to-[#0d142b] p-6 shadow-[0_20px_45px_rgba(2,6,23,0.45)] text-white"
+              >
+                <span className="text-3xl mb-3 inline-flex">{feature.emoji}</span>
+                <h3 className="text-lg font-semibold mb-2 text-white">{feature.title}</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">{feature.description}</p>
+              </div>
+            ))}
           </div>
         </section>
 
@@ -657,6 +706,73 @@ const dashboardFeatures = useMemo(
             </div>
           </div>
         </section>
+
+        {/* HOMEPAGE PLANS */}
+        <section id="plans-preview" className="py-16 px-4 bg-[#090e1f] text-white text-sm">
+          <div className="max-w-6xl mx-auto text-center space-y-3 mb-12">
+            <p className="text-[11px] uppercase tracking-[0.25em] text-blue-200">
+              {localize('Offre de lancement exceptionnelle', 'Exclusive launch offer')}
+            </p>
+            <h2 className="text-3xl font-bold">
+              {localize('Choisissez le plan qui sécurise votre croissance', 'Choose the plan that secures your growth')}
+            </h2>
+            <p className="text-slate-300 max-w-2xl mx-auto text-xs">
+              {localize(
+                'Des tarifs préférentiels pour un nombre limité de clients. Upgradez quand vous le souhaitez.',
+                'Limited-time pricing for the first customers. Upgrade whenever you need.'
+              )}
+            </p>
+          </div>
+
+          <div className="max-w-6xl mx-auto grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
+            {pricingCards.map((plan) => (
+              <div
+                key={plan.id}
+                className={`rounded-3xl border px-6 py-8 flex flex-col h-full ${
+                  plan.highlight
+                    ? 'border-blue-400 shadow-[0_25px_60px_rgba(37,99,235,0.35)] bg-[#111b3d]'
+                    : 'border-slate-700 bg-[#0f172f]'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-semibold">{plan.name}</h3>
+                  {plan.highlight && (
+                    <span className="text-[10px] uppercase tracking-wide bg-pink-500/90 text-white px-3 py-1 rounded-full">
+                      {localize('Plus populaire', 'Most popular')}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <p className="text-4xl font-bold text-white">
+                    {plan.price}
+                    <span className="text-base font-normal text-slate-300 ml-1">{plan.period}</span>
+                  </p>
+                  {plan.oldPrice && (
+                    <p className="text-xs text-slate-400">
+                      {localize('Au lieu de', 'Instead of')} {plan.oldPrice}
+                      {localize('/mois', '/month')}
+                    </p>
+                  )}
+                </div>
+                <ul className="mt-6 space-y-2 text-slate-200 flex-1">
+                  {plan.features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2 text-sm">
+                      <CheckCircle className="w-4 h-4 text-blue-300 mt-0.5" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  size="sm"
+                  className="mt-8 w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:opacity-90 text-white text-xs py-3 rounded-xl"
+                  asChild
+                >
+                  <Link href={plan.ctaHref}>{plan.ctaLabel}</Link>
+                </Button>
+              </div>
+            ))}
+          </div>
+        </section>
         {/* READY TO SCAN */}
         <section className="py-16 px-4 bg-white text-slate-900 text-center text-sm">
           <div className="max-w-5xl mx-auto">
@@ -670,15 +786,11 @@ const dashboardFeatures = useMemo(
                 'Join thousands of companies that trust CyberScan.'
               )}
             </p>
-
-            {/* CTA désactivé pour la démo – conservé pour future activation */}
-            {/* 
-            <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2" asChild>
+            <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2" asChild>
               <Link href="/register">
-                {localize("Démarrer maintenant", "Start now")}
+                {localize('Créer un compte gratuit', 'Create a free account')}
               </Link>
             </Button>
-            */}
           </div>
         </section>
       </main>
@@ -690,7 +802,10 @@ const dashboardFeatures = useMemo(
           <div className="grid gap-6 md:grid-cols-3">
             {/* BRAND */}
             <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-5 shadow-md">
-              <Logo width={80} height={80} className="mb-2 !justify-start" />
+              <div className="flex items-center gap-3 mb-3">
+                <Logo width={80} height={80} className="!justify-start" />
+                <span className="text-xl font-semibold text-white">CyberScan</span>
+              </div>
 
               <p className="mt-3 text-xs text-slate-300">
                 {/* éventuellement une phrase plus tard */}
