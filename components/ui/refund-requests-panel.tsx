@@ -1,6 +1,6 @@
 'use client';
 
-import { RefundRequest } from '@/lib/supabase';
+import type { RefundRequest } from '@/lib/supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card';
 import { Badge } from './badge';
 import { Button } from './button';
