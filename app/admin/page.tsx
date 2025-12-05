@@ -7,11 +7,12 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/lib/supabase';
+import { supabase, RefundRequest } from '@/lib/supabase';
 import { Users, Activity, CreditCard, TrendingUp, Trash2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
+import { RefundRequestsPanel } from '@/components/ui/refund-requests-panel';
 
 interface AdminUser {
   id: string;
@@ -71,6 +72,10 @@ export default function AdminDashboard() {
   const [creditAmount, setCreditAmount] = useState('10');
   const [creditFeedback, setCreditFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [creditLoading, setCreditLoading] = useState(false);
+  const [refundRequests, setRefundRequests] = useState<RefundRequest[]>([]);
+  const [refundLoading, setRefundLoading] = useState(false);
+  const [refundError, setRefundError] = useState<string | null>(null);
+  const [refundActionId, setRefundActionId] = useState<string | null>(null);
 
   // 🔐 Vérification du rôle admin
   useEffect(() => {
@@ -90,6 +95,8 @@ export default function AdminDashboard() {
     try {
       setError(null);
       setLoading(true);
+      setRefundLoading(true);
+      setRefundError(null);
 
       // Récupération session
       const { data: { session } } = await supabase.auth.getSession();
@@ -134,11 +141,45 @@ export default function AdminDashboard() {
       if (freeScanError) throw freeScanError;
       setFreeScans(freeScanData ?? []);
 
+      if (session?.access_token) {
+        try {
+          const refundsRes = await fetch('/service/refund-requests', {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          if (!refundsRes.ok) {
+            const errorText = await refundsRes.text();
+            console.error('Erreur récupération refunds admin:', errorText);
+            setRefundError(
+              localize(
+                'Impossible de charger les demandes de remboursement.',
+                'Unable to load refund requests.'
+              )
+            );
+          } else {
+            const json = await refundsRes.json().catch(() => null);
+            setRefundRequests(json?.requests ?? []);
+          }
+        } catch (refundErr) {
+          console.error('Erreur lors du chargement des remboursements:', refundErr);
+          setRefundError(
+            localize(
+              'Une erreur est survenue en récupérant les remboursements.',
+              'An error occurred while fetching refunds.'
+            )
+          );
+        } finally {
+          setRefundLoading(false);
+        }
+      } else {
+        setRefundError(localize('Session expirée pour les remboursements.', 'Session expired for refunds.'));
+        setRefundLoading(false);
+      }
     } catch (err: any) {
       console.error('Erreur chargement données admin:', err);
       setError(err.message || 'Erreur inattendue');
     } finally {
       setLoading(false);
+      setRefundLoading(false);
     }
   };
 
@@ -214,6 +255,39 @@ const handleDeleteUser = async (userId: string) => {
       });
     } finally {
       setCreditLoading(false);
+    }
+  };
+
+  const handleRefundDecision = async (requestId: string, decision: 'approve' | 'reject', note?: string) => {
+    try {
+      setRefundActionId(requestId);
+      const response = await fetch('/service/refund-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId, decision, note }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          payload?.detail ||
+          payload?.error ||
+          localize('Impossible de traiter cette demande de remboursement.', 'Unable to update this refund request.');
+        throw new Error(message);
+      }
+      window.alert(
+        decision === 'approve'
+          ? localize('Remboursement approuvé.', 'Refund approved.')
+          : localize('Demande rejetée.', 'Request rejected.')
+      );
+      await loadAdminData();
+    } catch (error: any) {
+      console.error('Refund decision error:', error);
+      window.alert(
+        error?.message ||
+          localize('Impossible de traiter cette demande de remboursement.', 'Unable to update this refund request.')
+      );
+    } finally {
+      setRefundActionId(null);
     }
   };
 
@@ -304,6 +378,14 @@ const handleDeleteUser = async (userId: string) => {
             </CardContent>
           </Card>
         </div>
+
+        <RefundRequestsPanel
+          requests={refundRequests}
+          loading={refundLoading}
+          error={refundError}
+          actionRequestId={refundActionId}
+          onDecision={handleRefundDecision}
+        />
 
         <Card>
           <CardHeader>
