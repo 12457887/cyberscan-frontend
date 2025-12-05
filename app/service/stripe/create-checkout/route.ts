@@ -60,6 +60,10 @@ export async function POST(req: Request) {
         targetPath = '/stripe/sync-subscription';
         delete parsed.action;
         forwardBody = JSON.stringify(parsed);
+      } else if (parsed?.action === 'confirm-session') {
+        targetPath = '/stripe/confirm-checkout-session';
+        delete parsed.action;
+        forwardBody = JSON.stringify(parsed);
       } else if (parsed?.action === 'request-refund') {
         targetPath = '/stripe/request-refund';
         delete parsed.action;

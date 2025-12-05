@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 
 const formatCurrency = (value?: string | null) => {
   if (!value) return null;
@@ -19,12 +20,18 @@ const steps = [
 
 export default function PaymentSucceededPage() {
   const searchParams = useSearchParams();
+  const { refreshCredits } = useAuth();
 
   const plan = searchParams.get('plan') ?? 'Professional';
   const interval = searchParams.get('interval') ?? 'monthly';
   const amountParam = searchParams.get('amount');
   const formattedAmount = formatCurrency(amountParam) ?? '—';
   const billingLabel = interval === 'annual' ? 'Annual' : 'Monthly';
+  const sessionId = searchParams.get('session_id');
+
+  const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'success' | 'error'>(sessionId ? 'idle' : 'success');
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const hasConfirmedRef = useRef(false);
 
   const nextBillingDate = useMemo(() => {
     const date = new Date();
@@ -40,6 +47,65 @@ export default function PaymentSucceededPage() {
     const random = Math.floor(Math.random() * 900000) + 100000;
     return `#CS-${year}-${random}`;
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!sessionId || hasConfirmedRef.current) {
+      return;
+    }
+    hasConfirmedRef.current = true;
+    let aborted = false;
+
+    const confirmSession = async () => {
+      setSyncState('syncing');
+      setSyncMessage('Validating your payment and refreshing your credits...');
+      try {
+        const response = await fetch('/service/stripe/create-checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'confirm-session',
+            sessionId,
+            plan,
+            interval,
+          }),
+        });
+        const text = await response.text();
+        let payload: any = null;
+        try {
+          payload = text ? JSON.parse(text) : null;
+        } catch {
+          payload = null;
+        }
+        if (!response.ok) {
+          const message =
+            payload?.detail ||
+            payload?.error ||
+            'We could not confirm your payment. Please contact support if the credits do not appear.';
+          throw new Error(message);
+        }
+        if (!aborted) {
+          setSyncState('success');
+          setSyncMessage('Payment confirmed. Your credits are now available.');
+        }
+      } catch (error: any) {
+        if (!aborted) {
+          setSyncState('error');
+          setSyncMessage(error?.message || 'Unable to refresh your credits.');
+        }
+      }
+    };
+
+    confirmSession();
+    return () => {
+      aborted = true;
+    };
+  }, [sessionId, plan, interval]);
+
+  useEffect(() => {
+    if (syncState === 'success') {
+      refreshCredits().catch((err) => console.error('Unable to refresh credits locally:', err));
+    }
+  }, [syncState, refreshCredits]);
 
   useEffect(() => {
     const colors = ['#6366f1', '#8b5cf6', '#22c55e', '#fbbf24', '#ec4899'];
@@ -92,6 +158,25 @@ export default function PaymentSucceededPage() {
                 Your subscription is active. You now have full access to our advanced security scanning platform.
               </p>
             </div>
+
+            {sessionId && (
+              <div
+                className={`rounded-xl border px-5 py-4 text-sm ${
+                  syncState === 'error'
+                    ? 'border-red-200 bg-red-50 text-red-700'
+                    : syncState === 'success'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-blue-200 bg-blue-50 text-blue-900'
+                }`}
+              >
+                {syncMessage ||
+                  (syncState === 'syncing'
+                    ? 'We are confirming your payment and updating your credits...'
+                    : syncState === 'success'
+                    ? 'Payment confirmed. Credits are up to date.'
+                    : 'If your credits are missing, please contact support.')}
+              </div>
+            )}
 
             <section className="rounded-2xl border border-slate-100 bg-slate-50/70 p-6">
               <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-800">
@@ -184,4 +269,3 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
     </div>
   );
 }
-
