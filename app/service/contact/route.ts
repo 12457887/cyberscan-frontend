@@ -66,6 +66,7 @@ export async function POST(request: Request) {
         '127.0.0.1',
         'cyberscan.fr',
         'cyber-scan.cloud',
+        'scanner.securas.cloud',
       ];
 
       if (verification.hostname && !allowedHosts.includes(verification.hostname)) {
