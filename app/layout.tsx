@@ -19,6 +19,8 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <head>
+        <link rel="icon" href="/dark_logo.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/dark_logo.png" />
         {/* Google tag (gtag.js) */}
         <Script async src="https://www.googletagmanager.com/gtag/js?id=G-R2BTRJE19L" />
         <Script id="gtag-init" strategy="afterInteractive">

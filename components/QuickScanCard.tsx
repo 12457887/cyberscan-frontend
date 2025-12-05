@@ -111,11 +111,9 @@ export function QuickScanCard() {
   const [freeScanId, setFreeScanId] = useState<string | null>(null);
   const [reportScanId, setReportScanId] = useState<string | null>(null);
   const [reportMongoId, setReportMongoId] = useState<string | null>(null);
-  const [ctaEmail, setCtaEmail] = useState('');
-  const [ctaStatus, setCtaStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [ctaLoading, setCtaLoading] = useState(false);
   const [unlockName, setUnlockName] = useState('');
   const [unlockEmail, setUnlockEmail] = useState('');
+  const [unlockSubmittedEmail, setUnlockSubmittedEmail] = useState<string | null>(null);
   const [unlockStatus, setUnlockStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [unlockLoading, setUnlockLoading] = useState(false);
   const [resultUnlocked, setResultUnlocked] = useState(false);
@@ -211,9 +209,8 @@ export function QuickScanCard() {
     setFreeScanId(null);
     setReportScanId(null);
     setReportMongoId(null);
-    setCtaEmail('');
-    setCtaStatus(null);
     setResultUnlocked(false);
+    setUnlockSubmittedEmail(null);
     setUnlockName('');
     setUnlockEmail('');
     setUnlockStatus(null);
@@ -329,6 +326,7 @@ export function QuickScanCard() {
 
       setResult(combinedResult);
       setResultUnlocked(false);
+      setUnlockSubmittedEmail(null);
 
       const loggedId = await logFreeScan({
         url: normalizedUrl,
@@ -409,34 +407,6 @@ export function QuickScanCard() {
     }
   };
 
-  const handleCtaSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    setCtaStatus(null);
-    if (!ctaEmail.trim()) {
-      setCtaStatus({ type: 'error', message: localize('Merci de saisir un email.', 'Please enter an email.') });
-      return;
-    }
-    setCtaLoading(true);
-    try {
-      await sendReportEmail(ctaEmail.trim());
-      setCtaStatus({
-        type: 'success',
-        message: localize(
-          'Merci ! Le rapport détaillé vient de vous être envoyé.',
-          'Thanks! The detailed report has just been sent to you.'
-        ),
-      });
-      setCtaEmail('');
-    } catch (err: any) {
-      setCtaStatus({
-        type: 'error',
-        message: err instanceof Error ? err.message : localize("Impossible d'envoyer le rapport.", 'Unable to send the report.'),
-      });
-    } finally {
-      setCtaLoading(false);
-    }
-  };
-
   const handleUnlockSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setUnlockStatus(null);
@@ -456,12 +426,14 @@ export function QuickScanCard() {
     }
     setUnlockLoading(true);
     try {
-      await sendReportEmail(unlockEmail.trim());
+      const emailToSend = unlockEmail.trim();
+      await sendReportEmail(emailToSend);
       setResultUnlocked(true);
       setUnlockStatus({
         type: 'success',
         message: localize('Rapport envoyé ! Résultats débloqués.', 'Report sent! Results unlocked.'),
       });
+      setUnlockSubmittedEmail(emailToSend);
       setUnlockName('');
       setUnlockEmail('');
       if (redirectTimer.current) {
@@ -615,8 +587,98 @@ export function QuickScanCard() {
           </div>
         )}
 
+        {result && !resultUnlocked && (
+          <div className="mt-6 bg-white border border-blue-100 rounded-2xl p-6 shadow-xl text-center space-y-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.25em] text-blue-500">
+                {localize('Débloquez votre rapport', 'Unlock your report')}
+              </p>
+              <h4 className="text-lg font-semibold text-slate-900">
+                {localize('Entrez vos informations pour afficher les résultats', 'Enter your details to view the results')}
+              </h4>
+              <p className="text-xs text-slate-500">
+                {localize(
+                  'Nous vous envoyons immédiatement le rapport détaillé par email.',
+                  'We will immediately email you the detailed report.'
+                )}
+              </p>
+            </div>
+            <form onSubmit={handleUnlockSubmit} className="grid gap-3 text-left">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-600" htmlFor="unlock-name">
+                  {localize('Nom complet', 'Full name')}
+                </label>
+                <Input
+                  id="unlock-name"
+                  type="text"
+                  placeholder={localize('Ex. Marie Dupont', 'e.g. Jane Doe')}
+                  value={unlockName}
+                  onChange={(event) => setUnlockName(event.target.value)}
+                  disabled={unlockLoading}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-600" htmlFor="unlock-email">
+                  Email
+                </label>
+                <Input
+                  id="unlock-email"
+                  type="email"
+                  placeholder="you@company.com"
+                  value={unlockEmail}
+                  onChange={(event) => setUnlockEmail(event.target.value)}
+                  disabled={unlockLoading}
+                  required
+                />
+              </div>
+              {unlockStatus && (
+                <p
+                  className={`text-xs ${
+                    unlockStatus.type === 'success' ? 'text-emerald-600' : 'text-red-600'
+                  }`}
+                >
+                  {unlockStatus.message}
+                </p>
+              )}
+              <Button type="submit" className="w-full" disabled={unlockLoading}>
+                {unlockLoading ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {localize('Envoi...', 'Sending...')}
+                  </span>
+                ) : (
+                  localize('Débloquer et recevoir le rapport', 'Unlock and receive the report')
+                )}
+              </Button>
+            </form>
+          </div>
+        )}
+
+        {result && resultUnlocked && (
+          <div className="mt-6 bg-white border border-emerald-100 rounded-2xl p-5 shadow-lg text-center space-y-2">
+            <p className="text-xs uppercase tracking-[0.25em] text-emerald-600">
+              {localize('Rapport envoyé', 'Report sent')}
+            </p>
+            <h4 className="text-lg font-semibold text-slate-900">
+              {localize('Les résultats sont débloqués et visibles ci-dessous.', 'Results are unlocked and visible below.')}
+            </h4>
+            <p className="text-sm text-slate-600">
+              {unlockSubmittedEmail
+                ? localize(
+                    `Un exemplaire a été envoyé à ${unlockSubmittedEmail}.`,
+                    `A copy was sent to ${unlockSubmittedEmail}.`
+                  )
+                : localize(
+                    'Votre rapport détaillé vient d’être envoyé.',
+                    'Your detailed report has just been sent.'
+                  )}
+            </p>
+          </div>
+        )}
+
         {result && (
-          <div>
+          <div className="mt-6">
             <div
               className={`bg-white rounded-2xl p-5 space-y-4 border border-slate-100 shadow-inner transition-all duration-300 ${
                 resultUnlocked ? '' : 'blur-sm opacity-70'
@@ -720,137 +782,6 @@ export function QuickScanCard() {
             )}
             </div>
 
-          </div>
-        )}
-
-        {result && !resultUnlocked && (
-          <div className="mt-6 bg-white border border-blue-100 rounded-2xl p-6 shadow-xl text-center space-y-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.25em] text-blue-500">
-                {localize('Débloquez votre rapport', 'Unlock your report')}
-              </p>
-              <h4 className="text-lg font-semibold text-slate-900">
-                {localize('Entrez vos informations pour afficher les résultats', 'Enter your details to view the results')}
-              </h4>
-              <p className="text-xs text-slate-500">
-                {localize(
-                  'Nous vous envoyons immédiatement le rapport détaillé par email.',
-                  'We will immediately email you the detailed report.'
-                )}
-              </p>
-            </div>
-            <form onSubmit={handleUnlockSubmit} className="grid gap-3 text-left">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-600" htmlFor="unlock-name">
-                  {localize('Nom complet', 'Full name')}
-                </label>
-                <Input
-                  id="unlock-name"
-                  type="text"
-                  placeholder={localize('Ex. Marie Dupont', 'e.g. Jane Doe')}
-                  value={unlockName}
-                  onChange={(event) => setUnlockName(event.target.value)}
-                  disabled={unlockLoading}
-                  required
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-600" htmlFor="unlock-email">
-                  Email
-                </label>
-                <Input
-                  id="unlock-email"
-                  type="email"
-                  placeholder="you@company.com"
-                  value={unlockEmail}
-                  onChange={(event) => setUnlockEmail(event.target.value)}
-                  disabled={unlockLoading}
-                  required
-                />
-              </div>
-              {unlockStatus && (
-                <p
-                  className={`text-xs ${
-                    unlockStatus.type === 'success' ? 'text-emerald-600' : 'text-red-600'
-                  }`}
-                >
-                  {unlockStatus.message}
-                </p>
-              )}
-              <Button type="submit" className="w-full" disabled={unlockLoading}>
-                {unlockLoading ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    {localize('Envoi...', 'Sending...')}
-                  </span>
-                ) : (
-                  localize('Débloquer et recevoir le rapport', 'Unlock and receive the report')
-                )}
-              </Button>
-            </form>
-          </div>
-        )}
-
-        {result && resultUnlocked && (
-          <div className="mt-4 bg-white/95 border border-blue-100 rounded-2xl p-5 shadow-lg space-y-4">
-            <div className="text-center space-y-1">
-              <p className="text-sm uppercase tracking-[0.25em] text-blue-500">
-                {localize('Rapport complet', 'Full report')}
-              </p>
-              <h4 className="text-xl font-semibold text-slate-900">
-                {localize('Recevez le rapport détaillé par email', 'Get the detailed report by email')}
-              </h4>
-              <p className="text-sm text-slate-500">
-                {localize(
-                  'Recevez un rapport PDF et suivez vos scans en temps réel.',
-                  'Receive a PDF report and track scans in real time.'
-                )}
-              </p>
-            </div>
-            <form onSubmit={handleCtaSubmit} className="flex flex-col gap-3">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Input
-                  type="email"
-                  placeholder="you@example.com"
-                  value={ctaEmail}
-                  onChange={(event) => setCtaEmail(event.target.value)}
-                  required
-                  disabled={ctaLoading}
-                  className="flex-1"
-                />
-                <Button type="submit" disabled={ctaLoading}>
-                  {ctaLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                      {localize('Envoi...', 'Sending...')}
-                    </>
-                  ) : (
-                    localize('Envoyer le rapport', 'Send the report')
-                  )}
-                </Button>
-              </div>
-              {ctaStatus && (
-                <p
-                  className={`text-xs ${
-                    ctaStatus.type === 'success' ? 'text-green-600' : 'text-red-600'
-                  }`}
-                >
-                  {ctaStatus.message}
-                </p>
-              )}
-              <div className="pt-3 border-t border-slate-200 text-center space-y-2">
-                <p className="text-xs text-slate-500">
-                  {localize('Envie d’un suivi en continu ?', 'Need continuous monitoring?')}
-                </p>
-                <Button
-                  size="lg"
-                  className="mx-auto bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white px-6 shadow-lg"
-                  asChild
-                >
-                  <Link href="/register">{localize('Créer un compte gratuitement', 'Create a free account')}</Link>
-                </Button>
-              </div>
-            </form>
           </div>
         )}
       </CardContent>
