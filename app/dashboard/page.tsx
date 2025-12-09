@@ -379,9 +379,21 @@ export default function DashboardPage() {
   const handleRefundDecision = async (requestId: string, decision: 'approve' | 'reject', note?: string) => {
     try {
       setRefundActionId(requestId);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        throw new Error(
+          localize('Session expirée, reconnectez-vous pour continuer.', 'Session expired, please log in again.')
+        );
+      }
       const response = await fetch('/service/refund-requests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ requestId, decision, note }),
       });
       const payload = await response.json().catch(() => null);

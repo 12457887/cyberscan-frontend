@@ -25,10 +25,18 @@ function buildHeaders(token: string | undefined, csrfToken?: string) {
   return headers;
 }
 
+function extractAccessToken(req: Request): string | undefined {
+  const authHeader = req.headers.get('authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.slice('Bearer '.length).trim();
+  }
+  const cookieStore = cookies();
+  return cookieStore.get('sb-access-token')?.value;
+}
+
 export async function GET(req: Request) {
   try {
-    const cookieStore = cookies();
-    const accessToken = cookieStore.get('sb-access-token')?.value;
+    const accessToken = extractAccessToken(req);
     if (!accessToken) {
       return new NextResponse(JSON.stringify({ error: 'Non authentifié' }), {
         status: 401,
@@ -66,7 +74,7 @@ export async function POST(req: Request) {
     }
 
     const cookieStore = cookies();
-    const accessToken = cookieStore.get('sb-access-token')?.value;
+    const accessToken = extractAccessToken(req);
     let csrfToken = cookieStore.get('csrf-token')?.value;
     let shouldSetCsrf = false;
 

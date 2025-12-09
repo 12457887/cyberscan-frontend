@@ -136,6 +136,9 @@ export type Invoice = {
   id: string;
   user_id: string;
   plan_type: string;
+  invoice_id?: string | null;
+  hosted_invoice_url?: string | null;
+  invoice_pdf_url?: string | null;
   customer_email?: string | null;
   payment_status?: string | null;
   currency?: string | null;

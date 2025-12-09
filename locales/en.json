@@ -44,6 +44,10 @@
     "profile": "Profile",
     "support": "Support",
     "admin": "Administration",
+    "manageSubscriptions": "Manage subscriptions",
+    "freeScans": "Free scans",
+    "scanLogs": "Scan logs",
+    "refundRequests": "Refund requests",
     "logout": "Log out"
   },
   "detection": {

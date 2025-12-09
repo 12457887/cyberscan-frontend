@@ -1121,6 +1121,7 @@ export default function SubscriptionPage() {
                       <th className="px-2 py-2 font-medium">{localize('Montant', 'Amount')}</th>
                       <th className="px-2 py-2 font-medium">{localize('Statut', 'Status')}</th>
                       <th className="px-2 py-2 font-medium">{localize('Carte', 'Card')}</th>
+                      <th className="px-2 py-2 font-medium">{localize('Facture', 'Invoice')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1132,6 +1133,10 @@ export default function SubscriptionPage() {
                       const cardLabel = invoice.card_brand && invoice.card_last4
                         ? `${invoice.card_brand.toUpperCase()} •••• ${invoice.card_last4}`
                         : localize('Non disponible', 'Not available');
+                      const invoiceLink =
+                        invoice.invoice_pdf_url ||
+                        invoice.hosted_invoice_url ||
+                        null;
                       return (
                         <tr key={invoice.id} className="border-t border-slate-100">
                           <td className="px-2 py-3 text-slate-700">{formatDate(invoice.created_at)}</td>
@@ -1141,6 +1146,17 @@ export default function SubscriptionPage() {
                           </td>
                           <td className="px-2 py-3 text-slate-700">{statusLabel}</td>
                           <td className="px-2 py-3 text-slate-700">{cardLabel}</td>
+                          <td className="px-2 py-3 text-slate-700">
+                            {invoiceLink ? (
+                              <Button variant="outline" size="sm" asChild>
+                                <a href={invoiceLink} target="_blank" rel="noopener noreferrer">
+                                  {localize('Télécharger', 'Download')}
+                                </a>
+                              </Button>
+                            ) : (
+                              <span className="text-slate-500">{localize('Non disponible', 'Not available')}</span>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}

@@ -35,7 +35,7 @@ export default function AdminLogsPage() {
   const [error, setError] = useState<string | null>(null);
   const [userFilter, setUserFilter] = useState('');
   const [search, setSearch] = useState('');
-  const [limit, setLimit] = useState(50);
+  const [limit, setLimit] = useState<number | 'all'>(50);
 
   useEffect(() => {
     if (!authLoading) {
@@ -52,7 +52,7 @@ export default function AdminLogsPage() {
 
   const buildQuery = () => {
     const params = new URLSearchParams();
-    params.set('limit', String(limit));
+    params.set('limit', limit === 'all' ? 'all' : String(limit));
     if (userFilter.trim()) {
       params.set('user_id', userFilter.trim());
     }
@@ -94,8 +94,12 @@ export default function AdminLogsPage() {
   };
 
   const handleLimitChange = (value: string) => {
+    if (value === 'all') {
+      setLimit('all');
+      return;
+    }
     const intValue = parseInt(value, 10);
-    if (!Number.isNaN(intValue) && intValue > 0 && intValue <= 200) {
+    if (!Number.isNaN(intValue) && intValue > 0) {
       setLimit(intValue);
     }
   };
@@ -127,15 +131,22 @@ export default function AdminLogsPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Input
-              type="number"
-              min={1}
-              max={200}
-              value={limit}
-              onChange={(e) => handleLimitChange(e.target.value)}
-              className="w-24"
-              placeholder="Limit"
-            />
+            <div className="flex items-center gap-2 border border-slate-200 rounded-md px-3">
+              <label htmlFor="log-limit" className="text-xs text-slate-500 uppercase tracking-wide">
+                {localize('Limite', 'Limit')}
+              </label>
+              <select
+                id="log-limit"
+                value={limit === 'all' ? 'all' : String(limit)}
+                onChange={(e) => handleLimitChange(e.target.value)}
+                className="bg-transparent text-sm text-slate-900 focus:outline-none"
+              >
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+                <option value="all">{localize('Tout', 'All')}</option>
+              </select>
+            </div>
             <Button onClick={handleRefresh} variant="outline" className="flex items-center gap-2">
               <RefreshCw className="w-4 h-4" />
               {localize('Actualiser', 'Refresh')}

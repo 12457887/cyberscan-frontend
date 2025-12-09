@@ -3,7 +3,24 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
-import { Shield, Home, Scan, FileText, CreditCard, User, Bell, LogOut, Menu, X, Settings, Zap, ArrowRight } from 'lucide-react';
+import {
+  Shield,
+  Home,
+  Scan,
+  FileText,
+  CreditCard,
+  User,
+  Bell,
+  LogOut,
+  Menu,
+  X,
+  Settings,
+  Zap,
+  ArrowRight,
+  Inbox,
+  ScrollText,
+  Layers,
+} from 'lucide-react';
 import Link from 'next/link';
 import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui/button';
@@ -21,7 +38,13 @@ const NAV_ITEMS = [
   { key: 'nav.support', href: '/dashboard?section=support', icon: User },
 ] as const;
 
-const ADMIN_NAV_ITEMS = [{ key: 'nav.admin', href: '/admin', icon: Settings }] as const;
+const ADMIN_NAV_ITEMS = [
+  { key: 'nav.admin', href: '/admin', icon: Settings },
+  { key: 'nav.manageSubscriptions', href: '/admin/subscriptions', icon: Layers },
+  { key: 'nav.freeScans', href: '/admin/free-scans', icon: Inbox },
+  { key: 'nav.scanLogs', href: '/admin/logs', icon: ScrollText },
+  { key: 'nav.refundRequests', href: '/admin/refunds', icon: CreditCard },
+] as const;
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, profile, credits, loading, signOut } = useAuth();

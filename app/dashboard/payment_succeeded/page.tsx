@@ -40,12 +40,19 @@ export default function PaymentSucceededPage() {
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   }, [interval]);
 
-  const orderId = useMemo(() => {
+  const [orderId, setOrderId] = useState(() => {
     const fromUrl = searchParams.get('order_id');
     if (fromUrl) return `#${fromUrl}`;
     const year = new Date().getFullYear();
     const random = Math.floor(Math.random() * 900000) + 100000;
     return `#CS-${year}-${random}`;
+  });
+
+  useEffect(() => {
+    const fromUrl = searchParams.get('order_id');
+    if (fromUrl) {
+      setOrderId(`#${fromUrl}`);
+    }
   }, [searchParams]);
 
   useEffect(() => {

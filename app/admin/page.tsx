@@ -7,12 +7,11 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { supabase, RefundRequest } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { Users, Activity, CreditCard, TrendingUp, Trash2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
-import { RefundRequestsPanel } from '@/components/ui/refund-requests-panel';
 
 interface AdminUser {
   id: string;
@@ -34,15 +33,6 @@ interface ContactMessage {
   created_at: string;
 }
 
-interface FreeScanEntry {
-  id: string;
-  url: string;
-  email: string | null;
-  cms_label: string | null;
-  risk_level: string | null;
-  created_at: string;
-}
-
 export default function AdminDashboard() {
   const { user, profile, loading: authLoading } = useAuth();
   const { choose } = useLanguage();
@@ -60,7 +50,6 @@ export default function AdminDashboard() {
   const router = useRouter();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [contactMessages, setContactMessages] = useState<ContactMessage[]>([]);
-  const [freeScans, setFreeScans] = useState<FreeScanEntry[]>([]);
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalScans: 0,
@@ -72,10 +61,6 @@ export default function AdminDashboard() {
   const [creditAmount, setCreditAmount] = useState('10');
   const [creditFeedback, setCreditFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [creditLoading, setCreditLoading] = useState(false);
-  const [refundRequests, setRefundRequests] = useState<RefundRequest[]>([]);
-  const [refundLoading, setRefundLoading] = useState(false);
-  const [refundError, setRefundError] = useState<string | null>(null);
-  const [refundActionId, setRefundActionId] = useState<string | null>(null);
 
   // 🔐 Vérification du rôle admin
   useEffect(() => {
@@ -95,8 +80,6 @@ export default function AdminDashboard() {
     try {
       setError(null);
       setLoading(true);
-      setRefundLoading(true);
-      setRefundError(null);
 
       // Récupération session
       const { data: { session } } = await supabase.auth.getSession();
@@ -132,54 +115,11 @@ export default function AdminDashboard() {
       if (contactError) throw contactError;
       setContactMessages(contactData ?? []);
 
-      const { data: freeScanData, error: freeScanError } = await supabase
-        .from('free_scans')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (freeScanError) throw freeScanError;
-      setFreeScans(freeScanData ?? []);
-
-      if (session?.access_token) {
-        try {
-          const refundsRes = await fetch('/service/refund-requests', {
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          });
-          if (!refundsRes.ok) {
-            const errorText = await refundsRes.text();
-            console.error('Erreur récupération refunds admin:', errorText);
-            setRefundError(
-              localize(
-                'Impossible de charger les demandes de remboursement.',
-                'Unable to load refund requests.'
-              )
-            );
-          } else {
-            const json = await refundsRes.json().catch(() => null);
-            setRefundRequests(json?.requests ?? []);
-          }
-        } catch (refundErr) {
-          console.error('Erreur lors du chargement des remboursements:', refundErr);
-          setRefundError(
-            localize(
-              'Une erreur est survenue en récupérant les remboursements.',
-              'An error occurred while fetching refunds.'
-            )
-          );
-        } finally {
-          setRefundLoading(false);
-        }
-      } else {
-        setRefundError(localize('Session expirée pour les remboursements.', 'Session expired for refunds.'));
-        setRefundLoading(false);
-      }
     } catch (err: any) {
       console.error('Erreur chargement données admin:', err);
       setError(err.message || 'Erreur inattendue');
     } finally {
       setLoading(false);
-      setRefundLoading(false);
     }
   };
 
@@ -258,41 +198,6 @@ const handleDeleteUser = async (userId: string) => {
     }
   };
 
-  const handleRefundDecision = async (requestId: string, decision: 'approve' | 'reject', note?: string) => {
-    try {
-      setRefundActionId(requestId);
-      const response = await fetch('/service/refund-requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId, decision, note }),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message =
-          payload?.detail ||
-          payload?.error ||
-          localize('Impossible de traiter cette demande de remboursement.', 'Unable to update this refund request.');
-        throw new Error(message);
-      }
-      window.alert(
-        decision === 'approve'
-          ? localize('Remboursement approuvé.', 'Refund approved.')
-          : localize('Demande rejetée.', 'Request rejected.')
-      );
-      await loadAdminData();
-    } catch (error: any) {
-      console.error('Refund decision error:', error);
-      window.alert(
-        error?.message ||
-          localize('Impossible de traiter cette demande de remboursement.', 'Unable to update this refund request.')
-      );
-    } finally {
-      setRefundActionId(null);
-    }
-  };
-
-
-
   // 🌀 État de chargement
   if (authLoading || loading) {
     return (
@@ -316,9 +221,16 @@ const handleDeleteUser = async (userId: string) => {
             <h1 className="text-3xl font-bold text-slate-900">{localize('Administration', 'Administration')}</h1>
             <p className="text-slate-600 mt-1">{localize("Vue d'ensemble de la plateforme", 'Platform overview')}</p>
           </div>
-          <Button asChild variant="outline">
-            <Link href="/admin/logs">{localize('Voir les logs de scans', 'View scan logs')}</Link>
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button asChild variant="outline">
+              <Link href="/admin/logs">{localize('Voir les logs de scans', 'View scan logs')}</Link>
+            </Button>
+            <Button asChild>
+              <Link href="/admin/free-scans">
+                {localize('Gérer les scans gratuits', 'Manage free scans')}
+              </Link>
+            </Button>
+          </div>
         </div>
 
         {error && (
@@ -379,14 +291,6 @@ const handleDeleteUser = async (userId: string) => {
           </Card>
         </div>
 
-        <RefundRequestsPanel
-          requests={refundRequests}
-          loading={refundLoading}
-          error={refundError}
-          actionRequestId={refundActionId}
-          onDecision={handleRefundDecision}
-        />
-
         <Card>
           <CardHeader>
             <CardTitle>{localize('Ajouter des crédits', 'Add credits')}</CardTitle>
@@ -438,6 +342,35 @@ const handleDeleteUser = async (userId: string) => {
               >
                 {creditFeedback.message}
               </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{localize('Messages de contact', 'Contact messages')}</CardTitle>
+            <CardDescription>
+              {localize('Derniers messages envoyés via le formulaire public', 'Latest messages from the public form')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {contactMessages.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                {localize('Aucun message reçu pour le moment.', 'No contact messages yet.')}
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {contactMessages.map((message) => (
+                  <div key={message.id} className="border border-slate-200 rounded-lg p-3 shadow-sm">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between text-xs text-slate-500">
+                      <span>{message.full_name || message.email}</span>
+                      <span>{new Date(message.created_at).toLocaleString(locale)}</span>
+                    </div>
+                    <p className="text-sm text-slate-900 mt-2 whitespace-pre-line">{message.message}</p>
+                    <p className="text-xs text-slate-500 mt-1">{message.email}</p>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -513,83 +446,6 @@ const handleDeleteUser = async (userId: string) => {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{localize('Messages de contact', 'Contact messages')}</CardTitle>
-            <CardDescription>
-              {localize('Derniers messages envoyés via le formulaire public', 'Latest messages from the public form')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {contactMessages.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                {localize('Aucun message reçu pour le moment.', 'No contact messages yet.')}
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {contactMessages.map((message) => (
-                  <div key={message.id} className="border border-slate-200 rounded-lg p-3 shadow-sm">
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between text-xs text-slate-500">
-                      <span>{message.full_name || message.email}</span>
-                      <span>{new Date(message.created_at).toLocaleString(locale)}</span>
-                    </div>
-                    <p className="text-sm text-slate-900 mt-2 whitespace-pre-line">{message.message}</p>
-                    <p className="text-xs text-slate-500 mt-1">{message.email}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>{localize('Scans gratuits collectés', 'Collected free scans')}</CardTitle>
-            <CardDescription>
-              {localize('Historique des scans instantanés et des emails capturés', 'History of instant scans and captured emails')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {freeScans.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                {localize('Aucun scan gratuit enregistré pour le moment.', 'No free scans collected yet.')}
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {freeScans.map((scan) => (
-                  <div key={scan.id} className="border border-slate-200 rounded-lg p-3 text-sm flex flex-col gap-1">
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1">
-                      <span className="font-semibold text-slate-900">{scan.url}</span>
-                      <span className="text-xs text-slate-500">
-                        {new Date(scan.created_at).toLocaleString(locale)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-slate-600 flex flex-wrap gap-2">
-                      {scan.email && (
-                        <span>
-                          Email:&nbsp;
-                          <strong>{scan.email}</strong>
-                        </span>
-                      )}
-                      {scan.cms_label && (
-                        <span>
-                          CMS:&nbsp;
-                          <strong>{scan.cms_label}</strong>
-                        </span>
-                      )}
-                      {scan.risk_level && (
-                        <span>
-                          Risk:&nbsp;
-                          <strong>{scan.risk_level}</strong>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </DashboardLayout>
   );
