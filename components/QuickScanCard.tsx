@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { AlertCircle, CheckCircle2, Globe, Lock, Loader2, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 type Severity = 'low' | 'medium' | 'high' | 'critical';
 
@@ -28,6 +29,8 @@ type ScanApiResult = {
   cms_scan?: { cves?: Array<{ severity?: string | null }> } | null;
   nuclei_scan?: { parsed_results?: Array<{ severity?: string | null }> } | null;
   zap_scan?: { alerts?: Array<{ risk?: string | null; severity?: string | null }> } | null;
+  severity_counts?: Record<string, number> | null;
+  risk_level?: string | null;
 };
 
 type AnalyzerResult = {
@@ -58,6 +61,45 @@ const zapRiskCodeMap: Record<string, Severity> = {
   '2': 'medium',
   '3': 'high',
   '4': 'critical',
+};
+
+const emptySeverityCounts = (): Record<Severity, number> => ({
+  low: 0,
+  medium: 0,
+  high: 0,
+  critical: 0,
+});
+
+const normalizeSeverityValue = (value?: string | null): Severity | null => {
+  if (!value) return null;
+  const normalized = value.toLowerCase() as Severity;
+  return severityOrder.includes(normalized) ? normalized : null;
+};
+
+const normalizeServerCounts = (counts?: Record<string, number> | null): Record<Severity, number> | null => {
+  if (!counts || typeof counts !== 'object') {
+    return null;
+  }
+  let provided = false;
+  const normalized = emptySeverityCounts();
+  severityOrder.forEach((severity) => {
+    const value = counts[severity] ?? counts[severity.toUpperCase()];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      normalized[severity] = value;
+      provided = true;
+    }
+  });
+  return provided ? normalized : null;
+};
+
+const deriveHighestFromCounts = (counts: Record<Severity, number>): Severity | null => {
+  for (let index = severityOrder.length - 1; index >= 0; index -= 1) {
+    const severity = severityOrder[index];
+    if (counts[severity] > 0) {
+      return severity;
+    }
+  }
+  return null;
 };
 
 const mapZapAlertSeverity = (alert: { risk?: string | null; severity?: string | null; riskcode?: string | number | null; riskCode?: string | number | null }): Severity | null => {
@@ -93,6 +135,7 @@ const formatCmsLabel = (name?: string | null) => {
 
 export function QuickScanCard() {
   const { choose } = useLanguage();
+  const router = useRouter();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const riskLabels = useMemo(
     () =>
@@ -117,6 +160,7 @@ export function QuickScanCard() {
   const [unlockStatus, setUnlockStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [unlockLoading, setUnlockLoading] = useState(false);
   const [resultUnlocked, setResultUnlocked] = useState(false);
+  const [duplicateEmailUsed, setDuplicateEmailUsed] = useState(false);
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [lastScannedUrl, setLastScannedUrl] = useState('');
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -134,17 +178,27 @@ export function QuickScanCard() {
   };
 
   const computeRiskFromResult = (scan: ScanApiResult): QuickScanResult => {
-    const severityCounts: Record<Severity, number> = {
-      low: 0,
-      medium: 0,
-      high: 0,
-      critical: 0,
-    };
+    const cmsLabel = formatCmsLabel(scan.cms_type);
+    const cmsSource: 'scan' | null = scan.cms_type ? 'scan' : null;
+    const serverCounts = normalizeServerCounts(scan.severity_counts);
+    const serverRiskLevel = normalizeSeverityValue(scan.risk_level);
+
+    if (serverCounts) {
+      return {
+        cmsLabel,
+        cmsSource,
+        riskLevel: serverRiskLevel ?? deriveHighestFromCounts(serverCounts),
+        severityCounts: serverCounts,
+        scanTime: scan.scan_time,
+      };
+    }
+
+    const severityCounts = emptySeverityCounts();
     let highest: Severity | null = null;
 
     const registerSeverity = (value?: string | null) => {
-      const normalized = (value || '').toLowerCase() as Severity;
-      if (!severityOrder.includes(normalized)) return;
+      const normalized = normalizeSeverityValue(value);
+      if (!normalized) return;
       severityCounts[normalized] += 1;
       highest = pickHighest(highest, normalized);
     };
@@ -166,13 +220,16 @@ export function QuickScanCard() {
     }
 
     return {
-      cmsLabel: formatCmsLabel(scan.cms_type),
-      cmsSource: scan.cms_type ? 'scan' : null,
+      cmsLabel,
+      cmsSource,
       riskLevel: highest,
       severityCounts,
       scanTime: scan.scan_time,
     };
   };
+
+  const duplicateEmailMessage =
+    'This email already used the free scan. Please sign in or sign up to continue.';
 
   const logFreeScan = async (payload: {
     id?: string | null;
@@ -393,8 +450,12 @@ export function QuickScanCard() {
       }),
     });
     if (!response.ok) {
-        let message = localize("Impossible d'envoyer le rapport.", 'Unable to send the report.');
-        const raw = await response.text();
+      const raw = await response.text();
+      const statusCode = response.status;
+      let message = localize("Impossible d'envoyer le rapport.", 'Unable to send the report.');
+      if (statusCode === 403) {
+        message = duplicateEmailMessage;
+      } else {
         try {
           const parsed = raw ? JSON.parse(raw) : null;
           message = parsed?.detail || parsed?.message || parsed?.error || message;
@@ -403,26 +464,29 @@ export function QuickScanCard() {
             message = raw;
           }
         }
-        throw new Error(message);
+      }
+      const error = new Error(message) as Error & { status?: number };
+      error.status = statusCode;
+      throw error;
     }
   };
 
-  const handleUnlockSubmit = async (event: FormEvent) => {
-    event.preventDefault();
+  const processUnlockSubmission = async (): Promise<boolean> => {
     setUnlockStatus(null);
+    setDuplicateEmailUsed(false);
     if (!unlockName.trim()) {
       setUnlockStatus({
         type: 'error',
         message: localize('Merci de renseigner votre nom complet.', 'Please enter your full name.'),
       });
-      return;
+      return false;
     }
     if (!unlockEmail.trim()) {
       setUnlockStatus({
         type: 'error',
         message: localize('Merci de renseigner votre email professionnel.', 'Please enter your email.'),
       });
-      return;
+      return false;
     }
     setUnlockLoading(true);
     try {
@@ -440,14 +504,22 @@ export function QuickScanCard() {
         clearTimeout(redirectTimer.current);
       }
       redirectTimer.current = setTimeout(() => setUnlockStatus(null), 5000);
+      return true;
     } catch (err: any) {
-      setUnlockStatus({
-        type: 'error',
-        message: err instanceof Error ? err.message : localize("Impossible d'envoyer le rapport.", 'Unable to send the report.'),
-      });
+      const statusCode = typeof err?.status === 'number' ? err.status : undefined;
+      const message =
+        err instanceof Error ? err.message : localize("Impossible d'envoyer le rapport.", 'Unable to send the report.');
+      setUnlockStatus({ type: 'error', message });
+      setDuplicateEmailUsed(statusCode === 403);
+      return false;
     } finally {
       setUnlockLoading(false);
     }
+  };
+
+  const handleUnlockSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    await processUnlockSubmission();
   };
 
   const riskBadgeClass = (risk: Severity) => {
@@ -648,9 +720,22 @@ export function QuickScanCard() {
                     {localize('Envoi...', 'Sending...')}
                   </span>
                 ) : (
-                  localize('Débloquer et recevoir le rapport', 'Unlock and receive the report')
+                  localize('Débloquer votre rapport', 'Unlock your report')
                 )}
               </Button>
+              {duplicateEmailUsed && (
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 space-y-2">
+                  <p>{duplicateEmailMessage}</p>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button type="button" variant="outline" className="flex-1" onClick={() => router.push('/login')}>
+                      Sign in
+                    </Button>
+                    <Button type="button" className="flex-1" onClick={() => router.push('/register')}>
+                      Sign up
+                    </Button>
+                  </div>
+                </div>
+              )}
             </form>
           </div>
         )}
