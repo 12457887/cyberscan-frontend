@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { USERNAME_REQUIREMENTS_TEXT, validateUsername } from '@/lib/username';
+import { PHONE_REQUIREMENTS_TEXT, validatePhoneNumber } from '@/lib/phone';
 
 const backendUrl =
   process.env.BACKEND_URL ||
@@ -65,11 +67,47 @@ export async function POST(request: Request) {
 
     const now = new Date().toISOString();
 
+    let sanitizedFullName: string | null = null;
+    if (fullName) {
+      const usernameCheck = validateUsername(fullName);
+      if (!usernameCheck.valid) {
+        console.warn('[service/auth] Suspicious full name blocked', {
+          email,
+          userId,
+          reason: usernameCheck.reason,
+          preview: String(fullName).slice(0, 120),
+        });
+        const errorMessage =
+          usernameCheck.reason === 'suspicious'
+            ? "Nom complet invalide : caractères suspects détectés."
+            : `Nom complet invalide. ${USERNAME_REQUIREMENTS_TEXT}`;
+        return NextResponse.json({ error: errorMessage }, { status: 400 });
+      }
+      sanitizedFullName = usernameCheck.sanitized;
+    }
+
+    let sanitizedPhoneNumber: string | null = null;
+    if (phoneNumber) {
+      const phoneCheck = validatePhoneNumber(phoneNumber);
+      if (!phoneCheck.valid) {
+        return NextResponse.json(
+          {
+            error:
+              phoneCheck.reason === 'missing'
+                ? 'Le numéro de téléphone est obligatoire.'
+                : `Numéro de téléphone invalide. ${PHONE_REQUIREMENTS_TEXT}`,
+          },
+          { status: 400 }
+        );
+      }
+      sanitizedPhoneNumber = phoneCheck.sanitized;
+    }
+
     const profilePayload = {
       id: userId,
       email,
-      full_name: fullName || null,
-      phone_number: phoneNumber || null,
+      full_name: sanitizedFullName || fullName || null,
+      phone_number: sanitizedPhoneNumber,
       role: 'client',
       created_at: now,
       updated_at: now,

@@ -4,6 +4,9 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase, Profile } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import { USERNAME_REQUIREMENTS_TEXT, validateUsername } from "@/lib/username";
+import { PHONE_REQUIREMENTS_TEXT, validatePhoneNumber } from "@/lib/phone";
+import { PASSWORD_REQUIREMENTS_TEXT, validatePasswordStrength } from "@/lib/password";
 
 type AuthResponse = {
   error: any;
@@ -167,18 +170,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    --------------------------*/
   const signUp = async (
     email: string,
-    _password: string,
+    password: string,
     fullName: string,
     phoneNumber: string
   ): Promise<AuthResponse> => {
+    const passwordCheck = validatePasswordStrength(password);
+    if (!passwordCheck.valid) {
+      const error = new Error(`Weak password. ${PASSWORD_REQUIREMENTS_TEXT}`);
+      return { error, message: error.message };
+    }
+    const usernameCheck = validateUsername(fullName);
+    if (!usernameCheck.valid) {
+      const error = new Error(`Invalid full name. ${USERNAME_REQUIREMENTS_TEXT}`);
+      return { error, message: error.message };
+    }
+    const sanitizedFullName = usernameCheck.sanitized;
+
+    const phoneCheck = validatePhoneNumber(phoneNumber);
+    if (!phoneCheck.valid) {
+      const error = new Error(
+        phoneCheck.reason === "missing"
+          ? "Phone number is required."
+          : `Invalid phone number. ${PHONE_REQUIREMENTS_TEXT}`
+      );
+      return { error, message: error.message };
+    }
+    const sanitizedPhone = phoneCheck.sanitized;
+
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
         shouldCreateUser: true,
         data: {
-          name: fullName,
-          full_name: fullName,
-          phone_number: phoneNumber,
+          name: sanitizedFullName,
+          full_name: sanitizedFullName,
+          phone_number: sanitizedPhone,
         },
       },
     });
@@ -211,6 +237,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user) return { error: true, message: "User not found after OTP." };
 
     if (type === 'signup' && passwordToSet) {
+      const passwordCheck = validatePasswordStrength(passwordToSet);
+      if (!passwordCheck.valid) {
+        const error = new Error(`Weak password. ${PASSWORD_REQUIREMENTS_TEXT}`);
+        return { error, message: error.message };
+      }
       const { error: passwordError } = await supabase.auth.updateUser({
         password: passwordToSet,
       });
@@ -223,12 +254,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const now = new Date().toISOString();
 
     // 1️⃣ Create or update profile safely
+    const sanitizedProvidedName = providedFullName ? validateUsername(providedFullName) : null;
     const resolvedFullName =
-      providedFullName?.trim() ||
+      (sanitizedProvidedName?.valid ? sanitizedProvidedName.sanitized : undefined) ||
       user.user_metadata?.full_name ||
       user.user_metadata?.name ||
       user.email ||
       undefined;
+    const resolvedFullNameCheck = resolvedFullName ? validateUsername(resolvedFullName) : null;
+    const safeResolvedFullName = resolvedFullNameCheck?.valid ? resolvedFullNameCheck.sanitized : undefined;
+
+    const safePhoneFromMetadata = user.user_metadata?.phone_number
+      ? validatePhoneNumber(user.user_metadata.phone_number)
+      : null;
+    const sanitizedPhoneNumber =
+      safePhoneFromMetadata && safePhoneFromMetadata.valid ? safePhoneFromMetadata.sanitized : undefined;
 
     const bootstrapResponse = await fetch("/service/auth", {
       method: "POST",
@@ -236,8 +276,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify({
         userId: user.id,
         email: user.email,
-        fullName: resolvedFullName,
-        phoneNumber: user.user_metadata?.phone_number ?? undefined,
+        fullName: safeResolvedFullName ?? resolvedFullName,
+        phoneNumber: sanitizedPhoneNumber,
       }),
     });
 

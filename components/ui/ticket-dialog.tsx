@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabase';
+import { PHONE_REQUIREMENTS_TEXT, sanitizePhoneInput, validatePhoneNumber } from '@/lib/phone';
 import { PlusCircle } from 'lucide-react';
 
 export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void }) {
@@ -33,7 +34,22 @@ export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void 
     setFormError(null);
     setIsLoading(true);
     try {
-      const phoneValue = formData.phone.trim();
+      const phoneCheck = validatePhoneNumber(formData.phone);
+      if (!phoneCheck.valid) {
+        setFormError(
+          localize(
+            phoneCheck.reason === 'missing'
+              ? 'Veuillez saisir un numéro de téléphone.'
+              : `Numéro de téléphone invalide. ${PHONE_REQUIREMENTS_TEXT}`,
+            phoneCheck.reason === 'missing'
+              ? 'Please provide a phone number.'
+              : `Invalid phone number. ${PHONE_REQUIREMENTS_TEXT}`
+          )
+        );
+        setIsLoading(false);
+        return;
+      }
+      const phoneValue = phoneCheck.sanitized;
       const emailValue = formData.email.trim();
 
       const { error } = await supabase.from('tickets').insert({
@@ -42,7 +58,7 @@ export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void 
         description: formData.description,
         priority: formData.priority,
         contact_email: emailValue || null,
-        phone_number: phoneValue || null,
+        phone_number: phoneValue,
         status: 'open'
       });
 
@@ -125,7 +141,7 @@ export function TicketDialog({ onTicketCreated }: { onTicketCreated: () => void 
               id="phone"
               type="tel"
               value={formData.phone}
-              onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+              onChange={(e) => setFormData(prev => ({ ...prev, phone: sanitizePhoneInput(e.target.value) }))}
               placeholder={localize('+33 6 12 34 56 78', '+1 555 555 5555')}
               required
             />

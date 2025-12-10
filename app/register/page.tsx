@@ -13,6 +13,9 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { GoogleReCaptchaProvider, useGoogleReCaptcha } from 'react-google-recaptcha-v3';
+import { USERNAME_REQUIREMENTS_TEXT, validateUsername } from '@/lib/username';
+import { PHONE_REQUIREMENTS_TEXT, sanitizePhoneInput, validatePhoneNumber } from '@/lib/phone';
+import { PASSWORD_REQUIREMENTS_TEXT, validatePasswordStrength } from '@/lib/password';
 
 const OTP_COOLDOWN_MS = 60_000;
 
@@ -75,10 +78,54 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
       return;
     }
 
-    if (!phoneNumber.trim()) {
-      setError(localize('Veuillez saisir un numéro de téléphone valide.', 'Please provide a valid phone number.'));
+    const passwordCheck = validatePasswordStrength(password);
+    if (!passwordCheck.valid) {
+      const message = `Weak password. ${PASSWORD_REQUIREMENTS_TEXT}`;
+      setError(localize(message, message));
       setLoading(false);
       return;
+    }
+
+    const usernameCheck = validateUsername(fullName);
+    if (!usernameCheck.valid) {
+      setError(
+        usernameCheck.reason === 'suspicious'
+          ? localize(
+              "Nom complet invalide : caractères ou mots-clés suspects détectés.",
+              'Invalid full name: suspicious characters detected.'
+            )
+          : localize(
+              `Nom complet invalide. ${USERNAME_REQUIREMENTS_TEXT}`,
+              `Invalid full name. ${USERNAME_REQUIREMENTS_TEXT}`
+            )
+      );
+      setLoading(false);
+      return;
+    }
+
+    const safeFullName = usernameCheck.sanitized;
+    if (safeFullName !== fullName) {
+      setFullName(safeFullName);
+    }
+
+    const phoneCheck = validatePhoneNumber(phoneNumber);
+    if (!phoneCheck.valid) {
+      setError(
+        localize(
+          phoneCheck.reason === 'missing'
+            ? 'Veuillez saisir un numéro de téléphone.'
+            : `Numéro de téléphone invalide. ${PHONE_REQUIREMENTS_TEXT}`,
+          phoneCheck.reason === 'missing'
+            ? 'Please provide a phone number.'
+            : `Invalid phone number. ${PHONE_REQUIREMENTS_TEXT}`
+        )
+      );
+      setLoading(false);
+      return;
+    }
+    const safePhone = phoneCheck.sanitized;
+    if (safePhone !== phoneNumber) {
+      setPhoneNumber(safePhone);
     }
 
     if (!acceptedTerms) {
@@ -92,7 +139,7 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
       return;
     }
 
-    const { error, message } = await signUp(email, password, fullName, phoneNumber.trim());
+    const { error, message } = await signUp(email, password, safeFullName, safePhone);
 
     if (error) {
       if ((error as any)?.code === 'over_email_send_rate_limit' || /rate limit/i.test(error?.message || '')) {
@@ -120,12 +167,38 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
     setError('');
     setOtpLoading(true);
 
+    const passwordCheck = validatePasswordStrength(password);
+    if (!passwordCheck.valid) {
+      const message = `Weak password. ${PASSWORD_REQUIREMENTS_TEXT}`;
+      setError(localize(message, message));
+      setOtpLoading(false);
+      return;
+    }
+
     if (!(await runRecaptcha('register_verify_otp'))) {
       setOtpLoading(false);
       return;
     }
 
-    const { error } = await verifyOtp(email, otp, fullName, 'signup', password);
+    const usernameCheck = validateUsername(fullName);
+    const safeFullName = usernameCheck.valid ? usernameCheck.sanitized : '';
+    if (!usernameCheck.valid) {
+      setError(
+        usernameCheck.reason === 'suspicious'
+          ? localize(
+              "Nom complet invalide : caractères ou mots-clés suspects détectés.",
+              'Invalid full name: suspicious characters detected.'
+            )
+          : localize(
+              `Nom complet invalide. ${USERNAME_REQUIREMENTS_TEXT}`,
+              `Invalid full name. ${USERNAME_REQUIREMENTS_TEXT}`
+            )
+      );
+      setOtpLoading(false);
+      return;
+    }
+
+    const { error } = await verifyOtp(email, otp, safeFullName, 'signup', password);
     if (error) {
       setError(error.message || localize('Code invalide', 'Invalid code'));
       setOtpLoading(false);
@@ -207,7 +280,7 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
                     type="tel"
                     placeholder="+33 6 12 34 56 78"
                     value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    onChange={(e) => setPhoneNumber(sanitizePhoneInput(e.target.value))}
                     required
                   />
                 </div>
