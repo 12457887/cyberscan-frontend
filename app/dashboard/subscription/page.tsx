@@ -469,11 +469,11 @@ export default function SubscriptionPage() {
     setStatusMessage(null);
     setActionLoadingPlan('refund');
     try {
-      const latestInvoice = invoices?.[0];
-      const invoiceId = latestInvoice?.id ?? null;
-      const paymentIntentId = latestInvoice?.stripe_payment_intent_id ?? null;
+      const eligibleInvoice = invoices?.find((invoice) => invoice?.stripe_payment_intent_id);
+      const invoiceId = eligibleInvoice?.id ?? null;
+      const paymentIntentId = eligibleInvoice?.stripe_payment_intent_id ?? null;
 
-      if (!latestInvoice || !paymentIntentId) {
+      if (!eligibleInvoice || !paymentIntentId) {
         throw new Error(
           localize(
             'Aucune facture éligible au remboursement ou paiement incomplet.',
