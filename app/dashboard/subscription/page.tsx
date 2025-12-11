@@ -470,17 +470,9 @@ export default function SubscriptionPage() {
     setActionLoadingPlan('refund');
     try {
       const eligibleInvoice = invoices?.find((invoice) => invoice?.stripe_payment_intent_id);
-      const invoiceId = eligibleInvoice?.id ?? null;
+      const fallbackInvoice = invoices?.[0];
+      const invoiceId = eligibleInvoice?.id ?? fallbackInvoice?.id ?? null;
       const paymentIntentId = eligibleInvoice?.stripe_payment_intent_id ?? null;
-
-      if (!eligibleInvoice || !paymentIntentId) {
-        throw new Error(
-          localize(
-            'Aucune facture éligible au remboursement ou paiement incomplet.',
-            'No eligible invoice or missing payment information.'
-          )
-        );
-      }
       const response = await fetch('/service/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
