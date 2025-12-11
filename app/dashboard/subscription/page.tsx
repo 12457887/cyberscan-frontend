@@ -465,7 +465,24 @@ export default function SubscriptionPage() {
   };
 
   const handleRefundRequest = async () => {
-    if (!subscription) return;
+    if (!subscription) {
+      setStatusMessage({
+        type: 'error',
+        text: localize(
+          "Aucun abonnement actif. Vous ne pouvez pas demander de remboursement.",
+          'No active subscription. Refunds cannot be requested.'
+        ),
+      });
+      return;
+    }
+
+    if (!user) {
+      setStatusMessage({
+        type: 'error',
+        text: localize('Vous devez être connecté pour demander un remboursement.', 'You must be signed in to request a refund.'),
+      });
+      return;
+    }
     setStatusMessage(null);
     setActionLoadingPlan('refund');
     try {
@@ -473,12 +490,26 @@ export default function SubscriptionPage() {
       const fallbackInvoice = invoices?.[0];
       const invoiceId = eligibleInvoice?.id ?? fallbackInvoice?.id ?? null;
       const paymentIntentId = eligibleInvoice?.stripe_payment_intent_id ?? null;
+
+      const targetUserId = subscription?.user_id ?? user.id;
+      if (!targetUserId) {
+        throw new Error(localize('Utilisateur introuvable.', 'Unable to determine user ID.'));
+      }
+
+      if (!invoiceId || !paymentIntentId) {
+        throw new Error(
+          localize(
+            'Aucune facture disponible pour le moment. Réessayez après la confirmation du paiement.',
+            'No invoice is available yet. Please try again after the payment is confirmed.'
+          )
+        );
+      }
       const response = await fetch('/service/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'request-refund',
-          userId: subscription.user_id,
+          userId: targetUserId,
           invoiceId,
           paymentIntentId,
         }),
@@ -929,7 +960,7 @@ export default function SubscriptionPage() {
                   <Button
                     variant="secondary"
                     onClick={handleRefundRequest}
-                    disabled={!subscription || actionLoadingPlan === 'refund'}
+                    disabled={!subscription || !user || actionLoadingPlan === 'refund'}
                   >
                     {actionLoadingPlan === 'refund' ? (
                       <>
