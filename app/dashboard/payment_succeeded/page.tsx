@@ -201,7 +201,6 @@ export default function PaymentSucceededPage() {
             <div className="rounded-xl border-l-4 border-blue-500 bg-blue-50 px-5 py-4 text-sm text-blue-900">
               📧 Confirmation email sent. Check your inbox (and spam folder) for the receipt and login details.
             </div>
-
             <section>
               <h3 className="mb-6 text-center text-xl font-semibold text-slate-900">What&apos;s next?</h3>
               <div className="grid gap-4 sm:grid-cols-3">

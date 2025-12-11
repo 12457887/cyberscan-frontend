@@ -469,7 +469,18 @@ export default function SubscriptionPage() {
     setStatusMessage(null);
     setActionLoadingPlan('refund');
     try {
-      const invoiceId = invoices?.[0]?.id ?? null;
+      const latestInvoice = invoices?.[0];
+      const invoiceId = latestInvoice?.id ?? null;
+      const paymentIntentId = latestInvoice?.stripe_payment_intent_id ?? null;
+
+      if (!latestInvoice || !paymentIntentId) {
+        throw new Error(
+          localize(
+            'Aucune facture éligible au remboursement ou paiement incomplet.',
+            'No eligible invoice or missing payment information.'
+          )
+        );
+      }
       const response = await fetch('/service/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -477,6 +488,7 @@ export default function SubscriptionPage() {
           action: 'request-refund',
           userId: subscription.user_id,
           invoiceId,
+          paymentIntentId,
         }),
       });
 
@@ -1134,8 +1146,8 @@ export default function SubscriptionPage() {
                         ? `${invoice.card_brand.toUpperCase()} •••• ${invoice.card_last4}`
                         : localize('Non disponible', 'Not available');
                       const invoiceLink =
-                        invoice.invoice_pdf_url ||
                         invoice.hosted_invoice_url ||
+                        invoice.invoice_pdf_url ||
                         null;
                       return (
                         <tr key={invoice.id} className="border-t border-slate-100">
