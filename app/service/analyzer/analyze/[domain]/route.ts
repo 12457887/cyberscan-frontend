@@ -27,12 +27,6 @@ type AnalyzerPayload = {
   error?: string | null;
 };
 
-type RouteContext = {
-  params: {
-    domain: string;
-  };
-};
-
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -154,10 +148,10 @@ const proxyBackend = async (domain: string) => {
 
 export async function GET(
   req: NextRequest,
-  context: RouteContext
+  { params }: { params: { domain: string } }
 ) {
   try {
-    const domain = context.params.domain;
+    const domain = params.domain;
     let payload = null;
 
     if (!backendAnalyzerOffline) {
@@ -172,7 +166,7 @@ export async function GET(
     return NextResponse.json(payload);
   } catch (error) {
     console.error('Erreur analyzer:', error);
-    const fallback = await localAnalyzeDomain(context.params.domain);
+    const fallback = await localAnalyzeDomain(params.domain);
     return NextResponse.json(fallback, {
       status: fallback.online ? 200 : 502,
     });
