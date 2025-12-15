@@ -1,4 +1,5 @@
 import { lookup } from 'dns/promises';
+import { NextRequest, NextResponse } from 'next/server';
 
 const CMS_SIGNATURES: Record<string, string[]> = {
   wordpress: ['wp-content', 'wp-includes', 'wp-json', 'wordpress'],
@@ -26,17 +27,25 @@ type AnalyzerPayload = {
   error?: string | null;
 };
 
+type RouteContext = {
+  params: {
+    domain: string;
+  };
+};
+
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 const detectCms = (html: string) => {
   const lower = html.toLowerCase();
   const detected = new Set<string>();
+
   for (const [cms, signatures] of Object.entries(CMS_SIGNATURES)) {
     if (signatures.some((sig) => lower.includes(sig.toLowerCase()))) {
       detected.add(cms);
     }
   }
+
   return Array.from(detected.values()).map(
     (cms) => cms.charAt(0).toUpperCase() + cms.slice(1)
   );
@@ -44,10 +53,7 @@ const detectCms = (html: string) => {
 
 const extractTitle = (html: string) => {
   const match = html.match(/<title[^>]*>(.*?)<\/title>/i);
-  if (match?.[1]) {
-    return match[1].replace(/\s+/g, ' ').trim();
-  }
-  return '';
+  return match?.[1] ? match[1].replace(/\s+/g, ' ').trim() : '';
 };
 
 const extractEmails = (text: string) => {
@@ -88,6 +94,7 @@ const localAnalyzeDomain = async (domain: string): Promise<AnalyzerPayload> => {
 
   for (const protocol of protocols) {
     const target = `${protocol}${domain}`;
+
     try {
       const res = await fetch(target, {
         headers: { 'User-Agent': USER_AGENT },
@@ -96,21 +103,21 @@ const localAnalyzeDomain = async (domain: string): Promise<AnalyzerPayload> => {
       });
 
       baseResult.status_code = res.status;
-      if (res.status >= 500) {
-        continue;
-      }
+      if (res.status >= 500) continue;
 
       const html = await res.text();
+
       baseResult.url = target;
       baseResult.online = true;
       baseResult.title = extractTitle(html);
+
       const cms = detectCms(html);
-      if (cms.length > 0) {
-        baseResult.cms = cms;
-      }
+      if (cms.length > 0) baseResult.cms = cms;
+
       const textOnly = html.replace(/<[^>]+>/g, ' ');
       baseResult.emails = extractEmails(textOnly);
       baseResult.phones = extractPhones(textOnly);
+
       return baseResult;
     } catch (err: any) {
       lastError = err instanceof Error ? err : new Error(String(err));
@@ -130,6 +137,7 @@ const proxyBackend = async (domain: string) => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
+
   const backendKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
   if (backendKey) {
     headers['x-backend-api-key'] = backendKey;
@@ -140,35 +148,33 @@ const proxyBackend = async (domain: string) => {
     { headers }
   );
 
-  if (!response.ok) {
-    return null;
-  }
+  if (!response.ok) return null;
   return response.json();
 };
 
 export async function GET(
-  req: Request,
-  { params }: { params: { domain: string } }
+  req: NextRequest,
+  context: RouteContext
 ) {
   try {
-    const domain = params.domain;
+    const domain = context.params.domain;
     let payload = null;
 
     if (!backendAnalyzerOffline) {
       payload = await proxyBackend(domain);
-      if (!payload) {
-        backendAnalyzerOffline = true;
-      }
+      if (!payload) backendAnalyzerOffline = true;
     }
 
     if (!payload) {
       payload = await localAnalyzeDomain(domain);
     }
 
-    return Response.json(payload);
+    return NextResponse.json(payload);
   } catch (error) {
     console.error('Erreur analyzer:', error);
-    const fallback = await localAnalyzeDomain(params.domain);
-    return Response.json(fallback, { status: fallback.online ? 200 : 502 });
+    const fallback = await localAnalyzeDomain(context.params.domain);
+    return NextResponse.json(fallback, {
+      status: fallback.online ? 200 : 502,
+    });
   }
 }
