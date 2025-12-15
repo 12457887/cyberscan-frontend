@@ -2,11 +2,11 @@
 
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+    context: { params: Promise<{ id: string }> }
 ) {
   try {
     const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
-    const { id } = params;
+    const { id } = await context.params;
 
     // 🔹 Appelle ton backend (FastAPI)
     const headers: Record<string, string> = {};
