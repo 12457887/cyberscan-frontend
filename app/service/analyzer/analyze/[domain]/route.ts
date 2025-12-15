@@ -145,9 +145,9 @@ const proxyBackend = async (domain: string) => {
  */
 export async function GET(
   _req: NextRequest,
-  context: { params: { domain: string } }
+  context: { params: Promise<{ domain: string }> }
 ) {
-  const { domain } = context.params;
+  const { domain } = await context.params;
 
   try {
     let payload = null;
