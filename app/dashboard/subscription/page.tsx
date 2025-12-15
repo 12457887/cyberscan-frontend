@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -29,7 +29,7 @@ type LocalizedPlan = {
   priceYearly: string;
 };
 
-export default function SubscriptionPage() {
+function SubscriptionPageContent() {
   const { user } = useAuth();
   const { choose } = useLanguage();
   const localize = useMemo(
@@ -1317,5 +1317,19 @@ export default function SubscriptionPage() {
         </DialogContent>
       </Dialog>
     </DashboardLayout>
+  );
+}
+
+export default function SubscriptionPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-full min-h-[400px] items-center justify-center text-sm text-muted-foreground">
+          Chargement de votre abonnement...
+        </div>
+      }
+    >
+      <SubscriptionPageContent />
+    </Suspense>
   );
 }
