@@ -1,12 +1,8 @@
-'use client';
-
+import type { ReactNode } from 'react';
 import './globals.css';
 import { Inter } from 'next/font/google';
-import { AuthProvider } from '@/contexts/AuthContext';
-import { LanguageProvider } from '@/contexts/LanguageContext';
-import { Toaster } from '@/components/ui/toaster';
 import Script from 'next/script';
-import { GoogleReCaptchaProvider } from 'react-google-recaptcha-v3';
+import { Providers } from './providers';
 
 const inter = Inter({ subsets: ['latin'] });
 const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || '';
@@ -14,7 +10,7 @@ const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || '';
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <html lang="fr">
@@ -46,17 +42,7 @@ export default function RootLayout({
         </Script>
       </head>
       <body className={inter.className}>
-        <GoogleReCaptchaProvider
-          reCaptchaKey={recaptchaSiteKey}
-          scriptProps={{ async: true, defer: true }}
-        >
-          <LanguageProvider>
-            <AuthProvider>
-              {children}
-              <Toaster />
-            </AuthProvider>
-          </LanguageProvider>
-        </GoogleReCaptchaProvider>
+        <Providers recaptchaSiteKey={recaptchaSiteKey}>{children}</Providers>
 
         {/* Intégration du script Crisp Chat */}
         <Script 
