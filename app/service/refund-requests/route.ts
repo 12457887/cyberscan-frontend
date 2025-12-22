@@ -2,13 +2,16 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 
-const backendUrl =
+const rawBackendUrl =
   process.env.BACKEND_URL ||
   (process.env.NODE_ENV !== 'production'
     ? 'http://localhost:8000'
     : undefined) ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
   'http://localhost:8000';
+const backendUrl = rawBackendUrl.startsWith('http')
+  ? rawBackendUrl
+  : `http://${rawBackendUrl}`;
 
 function buildHeaders(token: string | undefined, csrfToken?: string) {
   const headers: Record<string, string> = {
@@ -57,7 +60,12 @@ export async function GET(req: Request) {
     }
 
     const res = await fetch(`${backendUrl}/refund-requests`, {
-      headers: buildHeaders(accessToken),
+      headers: {
+        ...buildHeaders(accessToken),
+        ...(req.headers.get('cookie')
+          ? { Cookie: req.headers.get('cookie') as string }
+          : {}),
+      },
       cache: 'no-store',
     });
 

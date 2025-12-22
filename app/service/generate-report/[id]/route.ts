@@ -5,12 +5,19 @@ export async function GET(
     context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+    const rawBackendUrl =
+      process.env.BACKEND_URL ||
+      process.env.NEXT_PUBLIC_BACKEND_URL ||
+      "http://localhost:8000";
+    const backendUrl = rawBackendUrl.startsWith("http")
+      ? rawBackendUrl
+      : `http://${rawBackendUrl}`;
     const { id } = await context.params;
 
     // 🔹 Appelle ton backend (FastAPI)
     const headers: Record<string, string> = {};
-    const backendKey = process.env.NEXT_PUBLIC_BACKEND_API_KEY;
+    const backendKey =
+      process.env.BACKEND_API_KEY || process.env.NEXT_PUBLIC_BACKEND_API_KEY;
     if (backendKey) headers['x-backend-api-key'] = backendKey;
 
     const { searchParams } = new URL(req.url);

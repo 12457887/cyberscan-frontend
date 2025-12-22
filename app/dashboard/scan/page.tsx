@@ -261,7 +261,7 @@ export default function ScanPage() {
         }
         try {
           const url = new URL(candidate);
-          normalizedUrls.push(url.toString());
+          normalizedUrls.push(`${url.protocol}//${url.host}`);
         } catch (err) {
           setError(localize(`URL invalide: ${entry}`, `Invalid URL: ${entry}`));
           setLoading(false);

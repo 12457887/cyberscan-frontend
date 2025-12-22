@@ -14,9 +14,37 @@ if (!serviceRoleKey) {
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+const extractClientIp = (request: Request): string | null => {
+  const headerOrder = [
+    'x-forwarded-for',
+    'x-real-ip',
+    'cf-connecting-ip',
+    'true-client-ip',
+    'fastly-client-ip',
+  ];
+  for (const header of headerOrder) {
+    const value = request.headers.get(header);
+    if (value) {
+      return value.split(',')[0].trim();
+    }
+  }
+  return null;
+};
+
 export async function POST(request: Request) {
   try {
-    const { id, url, email, cms_label, risk_level, analyzer_domain, severity_counts } = await request.json();
+    const {
+      id,
+      url,
+      email,
+      cms_label,
+      risk_level,
+      analyzer_domain,
+      severity_counts,
+      scan_id,
+      mongo_report_id,
+    } = await request.json();
+    const clientIp = extractClientIp(request);
 
     if (!id && !url) {
       return NextResponse.json({ error: 'url is required when creating a new record.' }, { status: 400 });
@@ -25,7 +53,15 @@ export async function POST(request: Request) {
     if (id) {
       const { data, error } = await supabase
         .from('free_scans')
-        .update({ email, cms_label, risk_level, analyzer_domain, severity_counts })
+        .update({
+          email,
+          cms_label,
+          risk_level,
+          analyzer_domain,
+          severity_counts,
+          scan_id,
+          mongo_report_id,
+        })
         .eq('id', id)
         .select('id')
         .single();
@@ -35,7 +71,17 @@ export async function POST(request: Request) {
 
     const { data, error } = await supabase
       .from('free_scans')
-      .insert({ url, email, cms_label, risk_level, analyzer_domain, severity_counts })
+      .insert({
+        url,
+        email,
+        cms_label,
+        risk_level,
+        analyzer_domain,
+        severity_counts,
+        ip_address: clientIp,
+        scan_id,
+        mongo_report_id,
+      })
       .select('id')
       .single();
 
