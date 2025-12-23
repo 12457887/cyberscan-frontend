@@ -488,15 +488,16 @@ function SubscriptionPageContent() {
     try {
       const eligibleInvoice = invoices?.find((invoice) => invoice?.stripe_payment_intent_id);
       const fallbackInvoice = invoices?.[0];
-      const invoiceId = eligibleInvoice?.id ?? fallbackInvoice?.id ?? null;
-      const paymentIntentId = eligibleInvoice?.stripe_payment_intent_id ?? null;
+      const targetInvoice = eligibleInvoice ?? fallbackInvoice ?? null;
+      const invoiceId = targetInvoice?.id ?? null;
+      const paymentIntentId = targetInvoice?.stripe_payment_intent_id ?? null;
 
       const targetUserId = subscription?.user_id ?? user.id;
       if (!targetUserId) {
         throw new Error(localize('Utilisateur introuvable.', 'Unable to determine user ID.'));
       }
 
-      if (!invoiceId || !paymentIntentId) {
+      if (!invoiceId) {
         throw new Error(
           localize(
             'Aucune facture disponible pour le moment. Réessayez après la confirmation du paiement.',
@@ -1169,8 +1170,8 @@ function SubscriptionPageContent() {
                         ? `${invoice.card_brand.toUpperCase()} •••• ${invoice.card_last4}`
                         : localize('Non disponible', 'Not available');
                       const invoiceLink =
-                        invoice.hosted_invoice_url ||
                         invoice.invoice_pdf_url ||
+                        invoice.hosted_invoice_url ||
                         null;
                       return (
                         <tr key={invoice.id} className="border-t border-slate-100">
