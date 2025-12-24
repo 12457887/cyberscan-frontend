@@ -441,7 +441,7 @@ function SubscriptionPageContent() {
   };
 
   const loadInvoices = async (): Promise<Invoice[]> => {
-    if (!user) return;
+    if (!user) return [];
     setInvoicesLoading(true);
     setInvoicesError(null);
     try {
