@@ -108,7 +108,7 @@ export type RefundRequest = {
   amount_cents?: number | null;
   currency?: string | null;
   reason?: string | null;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'accepted' | 'rejected';
   admin_id?: string | null;
   decision_reason?: string | null;
   stripe_refund_id?: string | null;

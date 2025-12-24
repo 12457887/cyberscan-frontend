@@ -440,7 +440,7 @@ function SubscriptionPageContent() {
     setActionLoadingPlan(null);
   };
 
-  const loadInvoices = async () => {
+  const loadInvoices = async (): Promise<Invoice[]> => {
     if (!user) return;
     setInvoicesLoading(true);
     setInvoicesError(null);
@@ -453,12 +453,24 @@ function SubscriptionPageContent() {
         .limit(10);
 
       if (error) throw error;
-      setInvoices(data ?? []);
+      setInvoices((prev) => {
+        if (data && data.length > 0) return data;
+        if (prev.length > 0) return prev;
+        return data ?? [];
+      });
+      if (data && data.length > 0) {
+        return data;
+      }
+      if (invoices.length > 0) {
+        return invoices;
+      }
+      return data ?? [];
     } catch (error) {
       console.error('Error loading invoices:', error);
       setInvoicesError(
         localize("Impossible de charger l'historique des paiements.", 'Unable to load payment history.')
       );
+      return invoices;
     } finally {
       setInvoicesLoading(false);
     }
@@ -486,8 +498,9 @@ function SubscriptionPageContent() {
     setStatusMessage(null);
     setActionLoadingPlan('refund');
     try {
-      const eligibleInvoice = invoices?.find((invoice) => invoice?.stripe_payment_intent_id);
-      const fallbackInvoice = invoices?.[0];
+      const currentInvoices = invoices.length > 0 ? invoices : await loadInvoices();
+      const eligibleInvoice = currentInvoices?.find((invoice) => invoice?.stripe_payment_intent_id);
+      const fallbackInvoice = currentInvoices?.[0];
       const targetInvoice = eligibleInvoice ?? fallbackInvoice ?? null;
       const invoiceId = targetInvoice?.id ?? null;
       const paymentIntentId = targetInvoice?.stripe_payment_intent_id ?? null;
@@ -961,7 +974,7 @@ function SubscriptionPageContent() {
                   <Button
                     variant="secondary"
                     onClick={handleRefundRequest}
-                    disabled={!subscription || !user || actionLoadingPlan === 'refund'}
+                    disabled={!subscription || !user || actionLoadingPlan === 'refund' || invoicesLoading}
                   >
                     {actionLoadingPlan === 'refund' ? (
                       <>
@@ -1152,27 +1165,20 @@ function SubscriptionPageContent() {
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase text-slate-500">
-                      <th className="px-2 py-2 font-medium">{localize('Date', 'Date')}</th>
+                      <th className="px-2 py-2 font-medium">{localize('Date de paiement', 'Payment date')}</th>
                       <th className="px-2 py-2 font-medium">{localize('Plan', 'Plan')}</th>
                       <th className="px-2 py-2 font-medium">{localize('Montant', 'Amount')}</th>
-                      <th className="px-2 py-2 font-medium">{localize('Statut', 'Status')}</th>
-                      <th className="px-2 py-2 font-medium">{localize('Carte', 'Card')}</th>
                       <th className="px-2 py-2 font-medium">{localize('Facture', 'Invoice')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {invoices.map((invoice) => {
-                      const readablePlan =
-                        planNameMap[invoice.plan_type as keyof typeof planNameMap] ||
-                        invoice.plan_type.charAt(0).toUpperCase() + invoice.plan_type.slice(1);
-                      const statusLabel = invoice.payment_status || localize('Inconnu', 'Unknown');
-                      const cardLabel = invoice.card_brand && invoice.card_last4
-                        ? `${invoice.card_brand.toUpperCase()} •••• ${invoice.card_last4}`
+                      const planType = invoice.plan_type;
+                      const readablePlan = planType
+                        ? planNameMap[planType as keyof typeof planNameMap] ||
+                          planType.charAt(0).toUpperCase() + planType.slice(1)
                         : localize('Non disponible', 'Not available');
-                      const invoiceLink =
-                        invoice.invoice_pdf_url ||
-                        invoice.hosted_invoice_url ||
-                        null;
+                      const invoiceLink = invoice.invoice_pdf_url || null;
                       return (
                         <tr key={invoice.id} className="border-t border-slate-100">
                           <td className="px-2 py-3 text-slate-700">{formatDate(invoice.created_at)}</td>
@@ -1180,8 +1186,6 @@ function SubscriptionPageContent() {
                           <td className="px-2 py-3 font-medium text-slate-900">
                             {formatAmount(invoice.amount_total_cents, invoice.currency)}
                           </td>
-                          <td className="px-2 py-3 text-slate-700">{statusLabel}</td>
-                          <td className="px-2 py-3 text-slate-700">{cardLabel}</td>
                           <td className="px-2 py-3 text-slate-700">
                             {invoiceLink ? (
                               <Button variant="outline" size="sm" asChild>
