@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { supabase, Subscription, Invoice } from '@/lib/supabase';
+import { supabase, Subscription, Invoice, SubscriptionHistory } from '@/lib/supabase';
 import { Check, Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PLAN_DEFINITIONS, PlanDefinition } from '@/lib/plans';
@@ -56,6 +56,9 @@ function SubscriptionPageContent() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
+  const [subscriptionHistory, setSubscriptionHistory] = useState<SubscriptionHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const paymentElementRef = useRef<HTMLDivElement | null>(null);
   const paymentElementInstance = useRef<any>(null);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'annual'>('monthly');
@@ -194,9 +197,106 @@ function SubscriptionPageContent() {
     if (Number.isNaN(date.getTime())) return isoDate;
     return date.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
   };
+  const formatSubscriptionStatus = (status?: Subscription['status'] | null) => {
+    if (!status) return localize('Non disponible', 'Not available');
+    switch (status) {
+      case 'active':
+        return localize('Actif', 'Active');
+      case 'cancelled':
+        return localize('Annulé', 'Cancelled');
+      case 'expired':
+        return localize('Expiré', 'Expired');
+      default:
+        return status;
+    }
+  };
+  const subscriptionStatusClassName = (status?: Subscription['status'] | null) => {
+    switch (status) {
+      case 'active':
+        return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+      case 'cancelled':
+        return 'border-amber-200 bg-amber-50 text-amber-700';
+      case 'expired':
+        return 'border-slate-200 bg-slate-50 text-slate-600';
+      default:
+        return 'border-slate-200 bg-slate-50 text-slate-500';
+    }
+  };
+  const formatInvoiceStatus = (status?: string | null) => {
+    if (!status) return localize('Non disponible', 'Not available');
+    const normalized = status.toLowerCase();
+    switch (normalized) {
+      case 'paid':
+        return localize('Payé', 'Paid');
+      case 'open':
+        return localize('Ouverte', 'Open');
+      case 'void':
+        return localize('Annulée', 'Void');
+      case 'uncollectible':
+        return localize('Irrécouvrable', 'Uncollectible');
+      case 'draft':
+        return localize('Brouillon', 'Draft');
+      case 'refunded':
+        return localize('Remboursé', 'Refunded');
+      default:
+        return status;
+    }
+  };
+  const invoiceStatusClassName = (status?: string | null) => {
+    const normalized = status?.toLowerCase();
+    switch (normalized) {
+      case 'paid':
+        return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+      case 'open':
+        return 'border-amber-200 bg-amber-50 text-amber-700';
+      case 'refunded':
+        return 'border-slate-200 bg-slate-50 text-slate-600';
+      case 'void':
+        return 'border-slate-200 bg-slate-50 text-slate-600';
+      case 'uncollectible':
+        return 'border-red-200 bg-red-50 text-red-700';
+      case 'draft':
+        return 'border-slate-200 bg-slate-50 text-slate-500';
+      default:
+        return 'border-slate-200 bg-slate-50 text-slate-500';
+    }
+  };
   const formattedExpiryLabel = nextExpiryDate
     ? formatDate(nextExpiryDate.toISOString())
     : localize('Non défini', 'Not set');
+  const subscriptionStatusLabel = formatSubscriptionStatus(subscription?.status);
+  const subscriptionStatusBadgeClass = subscriptionStatusClassName(subscription?.status);
+  const paymentHistoryLoading = invoicesLoading || historyLoading;
+  const paymentHistoryError = invoicesError || historyError;
+  const paymentHistoryItems = useMemo(() => {
+    const invoiceItems = invoices.map((invoice) => ({
+      id: `invoice-${invoice.id}`,
+      kind: 'invoice' as const,
+      created_at: invoice.created_at,
+      plan_type: invoice.plan_type,
+      status: invoice.payment_status || null,
+      amount_cents: invoice.amount_total_cents ?? null,
+      currency: invoice.currency ?? null,
+      invoice_link: invoice.invoice_pdf_url || invoice.hosted_invoice_url || null,
+      invoice_reference: invoice.invoice_id || invoice.id || null,
+    }));
+    const subscriptionItems = subscriptionHistory.map((entry) => ({
+      id: `subscription-${entry.id}`,
+      kind: 'subscription' as const,
+      created_at: entry.started_at || entry.created_at,
+      plan_type: entry.plan_type ?? null,
+      status: entry.status ?? null,
+      amount_cents: null,
+      currency: null,
+      invoice_link: null,
+      invoice_reference: null,
+      credits_limit: entry.credits_limit ?? null,
+      expires_at: entry.expires_at ?? null,
+    }));
+    const merged = [...invoiceItems, ...subscriptionItems];
+    merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return merged;
+  }, [invoices, subscriptionHistory]);
 
   useEffect(() => {
     if (user) {
@@ -207,6 +307,12 @@ function SubscriptionPageContent() {
   useEffect(() => {
     if (user) {
       loadInvoices();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      loadSubscriptionHistory();
     }
   }, [user]);
 
@@ -449,8 +555,7 @@ function SubscriptionPageContent() {
         .from('invoices')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
       setInvoices((prev) => {
@@ -473,6 +578,31 @@ function SubscriptionPageContent() {
       return invoices;
     } finally {
       setInvoicesLoading(false);
+    }
+  };
+
+  const loadSubscriptionHistory = async (): Promise<SubscriptionHistory[]> => {
+    if (!user) return [];
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const { data, error } = await supabase
+        .from('subscription_history')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSubscriptionHistory(data ?? []);
+      return data ?? [];
+    } catch (error) {
+      console.error('Error loading subscription history:', error);
+      setHistoryError(
+        localize("Impossible de charger l'historique des abonnements.", 'Unable to load subscription history.')
+      );
+      return subscriptionHistory;
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -903,7 +1033,7 @@ function SubscriptionPageContent() {
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-300">{localize('Statut', 'Status')}</p>
                   <Badge className={`mt-2 border border-white/20 ${subscription.status === 'active' ? 'bg-emerald-500/20 text-emerald-100' : 'bg-white/10 text-white'}`}>
-                    {subscription.status === 'active' ? localize('Actif', 'Active') : subscription.status}
+                    {formatSubscriptionStatus(subscription.status)}
                   </Badge>
                 </div>
                 <div>
@@ -1146,17 +1276,17 @@ function SubscriptionPageContent() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {invoicesError && (
+            {paymentHistoryError && (
               <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {invoicesError}
+                {paymentHistoryError}
               </div>
             )}
-            {invoicesLoading ? (
+            {paymentHistoryLoading ? (
               <div className="flex items-center gap-2 text-sm text-slate-600">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {localize('Chargement des transactions...', 'Loading transactions...')}
               </div>
-            ) : invoices.length === 0 ? (
+            ) : paymentHistoryItems.length === 0 ? (
               <p className="text-sm text-slate-600">
                 {localize('Aucune transaction trouvée pour le moment.', 'No payment history yet.')}
               </p>
@@ -1167,24 +1297,42 @@ function SubscriptionPageContent() {
                     <tr className="text-left text-xs uppercase text-slate-500">
                       <th className="px-2 py-2 font-medium">{localize('Date de paiement', 'Payment date')}</th>
                       <th className="px-2 py-2 font-medium">{localize('Plan', 'Plan')}</th>
+                      <th className="px-2 py-2 font-medium">{localize('Statut', 'Status')}</th>
                       <th className="px-2 py-2 font-medium">{localize('Montant', 'Amount')}</th>
                       <th className="px-2 py-2 font-medium">{localize('Facture', 'Invoice')}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {invoices.map((invoice) => {
-                      const planType = invoice.plan_type;
+                    {paymentHistoryItems.map((item) => {
+                      const planType = item.plan_type;
                       const readablePlan = planType
                         ? planNameMap[planType as keyof typeof planNameMap] ||
                           planType.charAt(0).toUpperCase() + planType.slice(1)
                         : localize('Non disponible', 'Not available');
-                      const invoiceLink = invoice.invoice_pdf_url || null;
+                      const invoiceLink = item.invoice_link || null;
+                      const statusLabel =
+                        item.kind === 'invoice'
+                          ? formatInvoiceStatus(item.status)
+                          : formatSubscriptionStatus(item.status as Subscription['status'] | null);
+                      const statusClass =
+                        item.kind === 'invoice'
+                          ? invoiceStatusClassName(item.status)
+                          : subscriptionStatusClassName(item.status as Subscription['status'] | null);
+                      const amountLabel =
+                        item.kind === 'invoice' && typeof item.amount_cents === 'number'
+                          ? formatAmount(item.amount_cents, item.currency ?? undefined)
+                          : '—';
                       return (
-                        <tr key={invoice.id} className="border-t border-slate-100">
-                          <td className="px-2 py-3 text-slate-700">{formatDate(invoice.created_at)}</td>
+                        <tr key={item.id} className="border-t border-slate-100">
+                          <td className="px-2 py-3 text-slate-700">{formatDate(item.created_at)}</td>
                           <td className="px-2 py-3 text-slate-700">{readablePlan}</td>
+                          <td className="px-2 py-3 text-slate-700">
+                            <Badge variant="outline" className={statusClass}>
+                              {statusLabel}
+                            </Badge>
+                          </td>
                           <td className="px-2 py-3 font-medium text-slate-900">
-                            {formatAmount(invoice.amount_total_cents, invoice.currency)}
+                            {amountLabel}
                           </td>
                           <td className="px-2 py-3 text-slate-700">
                             {invoiceLink ? (
@@ -1193,6 +1341,8 @@ function SubscriptionPageContent() {
                                   {localize('Télécharger', 'Download')}
                                 </a>
                               </Button>
+                            ) : item.invoice_reference ? (
+                              <span className="text-slate-600">{item.invoice_reference}</span>
                             ) : (
                               <span className="text-slate-500">{localize('Non disponible', 'Not available')}</span>
                             )}

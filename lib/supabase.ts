@@ -27,6 +27,18 @@ export type Subscription = {
   updated_at: string | null;
 };
 
+export type SubscriptionHistory = {
+  id: string;
+  subscription_id?: string | null;
+  user_id: string;
+  plan_type?: 'free' | 'basic' | 'pro' | 'enterprise' | string | null;
+  status?: 'active' | 'cancelled' | 'expired' | string | null;
+  credits_limit?: number | null;
+  started_at?: string | null;
+  expires_at?: string | null;
+  created_at: string;
+};
+
 export type Credits = {
   id: string;
   user_id: string;
