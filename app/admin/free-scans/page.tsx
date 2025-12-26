@@ -13,18 +13,66 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import Link from 'next/link';
-import { Loader2, RefreshCcw } from 'lucide-react';
+import { Download, Loader2, RefreshCcw } from 'lucide-react';
 
 interface FreeScanEntry {
   id: string;
   url: string;
   email: string | null;
+  ip_address?: string | null;
+  scan_id?: string | null;
+  mongo_report_id?: string | null;
   cms_label: string | null;
   risk_level: string | null;
   analyzer_domain?: string | null;
   severity_counts?: Record<string, number> | null;
   created_at: string;
 }
+
+const LOCAL_IP_PLACEHOLDER = '__LOCAL_IP__';
+const normalizeDisplayUrl = (value: string): string => {
+  try {
+    const parsed = new URL(value);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return value;
+  }
+};
+const isPrivateOrLocalIp = (ip: string): boolean => {
+  const trimmed = ip.trim().toLowerCase();
+  if (!trimmed) return true;
+
+  if (
+    trimmed === '::1' ||
+    trimmed === '0:0:0:0:0:0:0:1' ||
+    trimmed === '127.0.0.1' ||
+    trimmed.startsWith('::ffff:127.0.0.1')
+  ) {
+    return true;
+  }
+
+  if (!trimmed.includes(':')) {
+    if (trimmed.startsWith('10.')) return true;
+    if (trimmed.startsWith('192.168.')) return true;
+    if (trimmed.startsWith('169.254.')) return true;
+    if (trimmed.startsWith('127.')) return true;
+    if (trimmed.startsWith('172.')) {
+      const parts = trimmed.split('.');
+      const second = Number(parts[1] || 0);
+      if (second >= 16 && second <= 31) return true;
+    }
+    return false;
+  }
+
+  return (
+    trimmed.startsWith('fc') ||
+    trimmed.startsWith('fd') ||
+    trimmed.startsWith('fe80::') ||
+    trimmed.startsWith('::ffff:10.') ||
+    trimmed.startsWith('::ffff:192.168.') ||
+    trimmed.startsWith('::ffff:172.')
+  );
+};
 
 export default function FreeScansAdminPage() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -49,6 +97,9 @@ export default function FreeScansAdminPage() {
   const [cmsFilter, setCmsFilter] = useState('all');
   const [onlyWithEmail, setOnlyWithEmail] = useState(false);
   const [limit, setLimit] = useState(100);
+  const [totalFreeScans, setTotalFreeScans] = useState<number | null>(null);
+  const [ipLocations, setIpLocations] = useState<Record<string, string | null>>({});
+  const [ipLocationServiceDown, setIpLocationServiceDown] = useState(false);
 
   useEffect(() => {
     if (!authLoading) {
@@ -73,6 +124,10 @@ export default function FreeScansAdminPage() {
     try {
       setLoading(true);
       setError(null);
+      const { count: totalCount } = await supabase
+        .from('free_scans')
+        .select('id', { count: 'exact', head: true });
+      setTotalFreeScans(totalCount ?? 0);
       let query = supabase
         .from('free_scans')
         .select('*')
@@ -102,6 +157,91 @@ export default function FreeScansAdminPage() {
     });
     return Array.from(values).sort();
   }, [scans]);
+
+  useEffect(() => {
+    const candidateIps = Array.from(
+      new Set(
+        scans
+          .map((scan) => (scan.ip_address || '').trim())
+          .filter((ip): ip is string => Boolean(ip))
+      )
+    ).filter((ip) => ipLocations[ip] === undefined);
+
+    if (!candidateIps.length) {
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      const localUpdates: Record<string, string | null> = {};
+      const publicIps: string[] = [];
+
+      for (const ip of candidateIps) {
+        if (isPrivateOrLocalIp(ip)) {
+          localUpdates[ip] = LOCAL_IP_PLACEHOLDER;
+        } else {
+          publicIps.push(ip);
+        }
+      }
+
+      if (!cancelled && Object.keys(localUpdates).length) {
+        setIpLocations((prev) => ({ ...prev, ...localUpdates }));
+      }
+
+      if (ipLocationServiceDown || !publicIps.length) {
+        return;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setIpLocationServiceDown(true);
+        return;
+      }
+
+      const updates: Record<string, string | null> = {};
+      for (const ip of publicIps) {
+        try {
+          const res = await fetch(
+            `/service/admin?resource=ip-location&ip=${encodeURIComponent(ip)}`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+              cache: 'no-store',
+            }
+          );
+
+          if (res.status === 503) {
+            setIpLocationServiceDown(true);
+            return;
+          }
+
+          if (!res.ok) {
+            updates[ip] = null;
+            continue;
+          }
+
+          const data = await res.json().catch(() => null);
+          if (data?.code === 'local_ip') {
+            updates[ip] = LOCAL_IP_PLACEHOLDER;
+            continue;
+          }
+          updates[ip] =
+            data?.country_name || data?.region_name || data?.city_name || null;
+        } catch {
+          updates[ip] = null;
+        }
+      }
+
+      if (!cancelled && Object.keys(updates).length) {
+        setIpLocations((prev) => ({ ...prev, ...updates }));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [scans, ipLocations, ipLocationServiceDown]);
 
   const filteredScans = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -165,6 +305,11 @@ export default function FreeScansAdminPage() {
                 'Complete history of instant scans captured through the public form.'
               )}
             </p>
+            {totalFreeScans !== null && (
+              <p className="text-sm text-slate-500 mt-1">
+                {localize('Total :', 'Total:')} <span className="font-semibold text-slate-700">{totalFreeScans}</span>
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="flex items-center gap-2 border border-slate-200 rounded-md px-3">
@@ -200,7 +345,7 @@ export default function FreeScansAdminPage() {
         )}
 
         <Card>
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle>{localize('Filtres', 'Filters')}</CardTitle>
             <CardDescription>
               {localize(
@@ -209,7 +354,7 @@ export default function FreeScansAdminPage() {
               )}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-2">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-slate-500">
@@ -291,34 +436,94 @@ export default function FreeScansAdminPage() {
               </p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-slate-50 text-slate-600 text-left">
+                <table className="min-w-full text-sm border-separate border-spacing-0">
+                  <thead className="bg-gradient-to-r from-slate-50 via-white to-slate-50 text-slate-600 text-left sticky top-0 z-10 shadow-sm">
                     <tr>
-                      <th className="px-4 py-3 font-medium">{localize('Date', 'Date')}</th>
-                      <th className="px-4 py-3 font-medium">{localize('URL', 'URL')}</th>
-                      <th className="px-4 py-3 font-medium">Email</th>
-                      <th className="px-4 py-3 font-medium">CMS</th>
-                      <th className="px-4 py-3 font-medium">{localize('Risque', 'Risk')}</th>
-                      <th className="px-4 py-3 font-medium">{localize('Détails', 'Details')}</th>
+                      <th className="px-4 py-3 font-semibold w-32">{localize('Date', 'Date')}</th>
+                      <th className="px-4 py-3 font-semibold">{localize('URL', 'URL')}</th>
+                      <th className="px-4 py-3 font-semibold w-48">Email</th>
+                      <th className="px-4 py-3 font-semibold">IP</th>
+                      <th className="px-4 py-3 font-semibold">{localize('Localisation', 'Location')}</th>
+                      <th className="px-4 py-3 font-semibold">CMS</th>
+                      <th className="px-4 py-3 font-semibold">{localize('Risque', 'Risk')}</th>
+                      <th className="px-4 py-3 font-semibold">{localize('Rapport', 'Report')}</th>
+                      <th className="px-4 py-3 font-semibold">{localize('Détails', 'Details')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredScans.map((scan) => (
-                      <tr key={scan.id} className="border-b border-slate-100">
-                        <td className="px-4 py-3 text-slate-600">
-                          {new Date(scan.created_at).toLocaleString(locale)}
+                      <tr
+                        key={scan.id}
+                        className="border-b border-slate-100 odd:bg-white even:bg-slate-50/40 hover:bg-slate-100/60 transition-colors"
+                      >
+                        <td className="px-4 py-3 text-slate-600 tabular-nums whitespace-nowrap w-32">
+                          {(() => {
+                            const date = new Date(scan.created_at);
+                            return (
+                              <div className="flex flex-col">
+                                <span>{date.toLocaleDateString(locale)}</span>
+                                <span className="text-xs text-slate-500">
+                                  {date.toLocaleTimeString(locale, { timeStyle: 'short' })}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-3 max-w-[220px] whitespace-normal break-words">
-                          <p className="font-semibold text-slate-900">{scan.url}</p>
+                          <p className="font-semibold text-slate-900">
+                            {normalizeDisplayUrl(scan.url)}
+                          </p>
                           {scan.analyzer_domain && (
                             <p className="text-xs text-slate-500">{scan.analyzer_domain}</p>
                           )}
                         </td>
-                        <td className="px-4 py-3">{scan.email || '—'}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 text-slate-700 w-48 max-w-[12rem] truncate">
+                          {scan.email || '—'}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs text-slate-700">{scan.ip_address || '—'}</td>
+                        <td className="px-4 py-3 text-xs text-slate-600">
+                          {(() => {
+                            const trimmedIp = (scan.ip_address || '').trim();
+                            if (!trimmedIp) {
+                              return '—';
+                            }
+                            if (ipLocationServiceDown) {
+                              return localize('Indisponible', 'Unavailable');
+                            }
+                            const location = ipLocations[trimmedIp];
+                            if (location === undefined) {
+                              return localize('Recherche...', 'Fetching...');
+                            }
+                            if (location === LOCAL_IP_PLACEHOLDER) {
+                              return localize('Réseau local', 'Local network');
+                            }
+                            return location || localize('Inconnue', 'Unknown');
+                          })()}
+                        </td>
+                        <td className="px-4 py-3 text-slate-700">
                           {scan.cms_label ? scan.cms_label : localize('Inconnu', 'Unknown')}
                         </td>
                         <td className="px-4 py-3">{renderRiskBadge(scan.risk_level)}</td>
+                        <td className="px-4 py-3">
+                          {(() => {
+                            const reportId = scan.mongo_report_id || scan.scan_id;
+                            if (!reportId) {
+                              return localize('Indisponible', 'Unavailable');
+                            }
+                            return (
+                              <Button asChild size="sm" variant="outline">
+                                <a
+                                  href={`/service/generate-report/${reportId}?report_format=pdf`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  <Download className="w-4 h-4 mr-1" />
+                                  {localize('Télécharger', 'Download')}
+                                </a>
+                              </Button>
+                            );
+                          })()}
+                        </td>
                         <td className="px-4 py-3 text-xs text-slate-500">
                           {scan.severity_counts ? (
                             <div className="flex flex-wrap gap-2">

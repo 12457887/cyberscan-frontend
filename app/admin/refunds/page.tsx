@@ -107,8 +107,9 @@ export default function AdminRefundsPage() {
     return requests.reduce(
       (acc, req) => {
         const statusKey = (req.status || 'pending').toLowerCase();
-        if (statusKey in acc) {
-          acc[statusKey as keyof typeof acc] += 1;
+        const normalizedStatus = statusKey === 'accepted' ? 'approved' : statusKey;
+        if (normalizedStatus in acc) {
+          acc[normalizedStatus as keyof typeof acc] += 1;
         }
         return acc;
       },

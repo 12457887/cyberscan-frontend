@@ -8,7 +8,17 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
-import { Users, Activity, CreditCard, TrendingUp, Trash2, Plus } from 'lucide-react';
+import {
+  Users,
+  Activity,
+  CreditCard,
+  TrendingUp,
+  ShieldAlert,
+  Trash2,
+  Plus,
+  Inbox,
+  ScrollText,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Link from 'next/link';
@@ -53,6 +63,9 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalScans: 0,
+    totalFreeScans: 0,
+    totalScanLogs: 0,
+    totalVulnerabilities: 0,
     activeSubscriptions: 0,
   });
   const [loading, setLoading] = useState(true);
@@ -101,10 +114,52 @@ export default function AdminDashboard() {
 
       // 2️⃣ Calcul des stats globales
       const totalUsers = usersData?.length || 0;
-      const totalScans = (await supabase.from('scans').select('id')).data?.length || 0;
+
+      const { count: totalScansCount, error: scansCountError } = await supabase
+        .from('scans')
+        .select('id', { count: 'exact', head: true });
+      if (scansCountError) throw scansCountError;
+
+      const { count: totalFreeScansCount, error: freeScansCountError } = await supabase
+        .from('free_scans')
+        .select('id', { count: 'exact', head: true });
+      if (freeScansCountError) throw freeScansCountError;
+
+      let totalScanLogsCount = 0;
+      try {
+        const logsRes = await fetch('/service/admin/scan-logs?limit=1&include_total=true', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          cache: 'no-store',
+        });
+        if (logsRes.ok) {
+          const logsPayload = await logsRes.json().catch(() => null);
+          if (typeof logsPayload?.total === 'number') {
+            totalScanLogsCount = logsPayload.total;
+          } else if (typeof logsPayload?.count === 'number') {
+            totalScanLogsCount = logsPayload.count;
+          }
+        }
+      } catch {
+        totalScanLogsCount = 0;
+      }
+
+      const { data: vulnerabilitiesData, error: vulnerabilitiesError } = await supabase
+        .from('vulnerabilities')
+        .select('count');
+      if (vulnerabilitiesError) throw vulnerabilitiesError;
+      const totalVulnerabilities =
+        vulnerabilitiesData?.reduce((sum, entry) => sum + (entry?.count || 0), 0) || 0;
+
       const activeSubscriptions = usersData?.filter(u => u.status === 'active').length || 0;
 
-      setStats({ totalUsers, totalScans, activeSubscriptions });
+      setStats({
+        totalUsers,
+        totalScans: totalScansCount || 0,
+        totalFreeScans: totalFreeScansCount || 0,
+        totalScanLogs: totalScanLogsCount || 0,
+        totalVulnerabilities,
+        activeSubscriptions,
+      });
 
       const { data: contactData, error: contactError } = await supabase
         .from('contact_messages')
@@ -241,7 +296,7 @@ const handleDeleteUser = async (userId: string) => {
         )}
 
         {/* 📊 Statistiques principales */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">{localize('Utilisateurs', 'Users')}</CardTitle>
@@ -261,6 +316,43 @@ const handleDeleteUser = async (userId: string) => {
             <CardContent>
               <div className="text-2xl font-bold">{stats.totalScans}</div>
               <p className="text-xs text-slate-600 mt-2">{localize('scans effectués', 'scans run')}</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">{localize('Scans gratuits', 'Free scans')}</CardTitle>
+              <Inbox className="h-4 w-4 text-indigo-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalFreeScans}</div>
+              <p className="text-xs text-slate-600 mt-2">{localize('formulaires soumis', 'forms submitted')}</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">{localize('Logs de scans', 'Scan logs')}</CardTitle>
+              <ScrollText className="h-4 w-4 text-slate-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalScanLogs}</div>
+              <p className="text-xs text-slate-600 mt-2">{localize('entrées journalisées', 'log entries')}</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">
+                {localize('Vulnérabilités détectées', 'Vulnerabilities detected')}
+              </CardTitle>
+              <ShieldAlert className="h-4 w-4 text-red-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalVulnerabilities}</div>
+              <p className="text-xs text-slate-600 mt-2">
+                {localize('vulnérabilités cumulées', 'total vulnerabilities logged')}
+              </p>
             </CardContent>
           </Card>
 

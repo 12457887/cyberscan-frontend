@@ -122,8 +122,13 @@ const mapZapAlertSeverity = (alert: { risk?: string | null; severity?: string | 
 const normalizeUrl = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return trimmed;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return `https://${trimmed}`;
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return candidate;
+  }
 };
 
 const formatCmsLabel = (name?: string | null) => {
@@ -239,6 +244,8 @@ export function QuickScanCard() {
     risk_level?: string | null;
     analyzer_domain?: string | null;
     severity_counts?: Record<Severity, number>;
+    scan_id?: string | null;
+    mongo_report_id?: string | null;
   }) => {
     try {
       const response = await fetch('/service/free-scan-log', {
@@ -359,8 +366,10 @@ export function QuickScanCard() {
         throw new Error(localize("Impossible d'obtenir les résultats du scan.", 'Scan results are unavailable.'));
       }
 
-      setReportScanId((scanRaw as ScanApiResult)?.scan_id ?? null);
-      setReportMongoId((scanRaw as ScanApiResult)?.mongo_id ?? null);
+      const scanId = (scanRaw as ScanApiResult)?.scan_id ?? null;
+      const mongoId = (scanRaw as ScanApiResult)?.mongo_id ?? null;
+      setReportScanId(scanId);
+      setReportMongoId(mongoId);
       const computed = computeRiskFromResult(scanRaw as ScanApiResult);
       const analyzerCms =
         analyzerData &&
@@ -391,6 +400,8 @@ export function QuickScanCard() {
         risk_level: combinedResult.riskLevel,
         analyzer_domain: analyzerDomain,
         severity_counts: combinedResult.severityCounts,
+        scan_id: scanId,
+        mongo_report_id: mongoId,
       });
       if (loggedId) {
         setFreeScanId(loggedId);
@@ -430,6 +441,8 @@ export function QuickScanCard() {
       risk_level: result?.riskLevel ?? null,
       analyzer_domain: analyzerDetails?.domain ?? null,
       severity_counts: result?.severityCounts,
+      scan_id: reportScanId,
+      mongo_report_id: reportMongoId,
     };
     const id = await logFreeScan(payload);
     if (!id) {

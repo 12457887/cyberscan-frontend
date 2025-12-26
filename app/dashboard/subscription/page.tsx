@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { supabase, Subscription, Invoice } from '@/lib/supabase';
+import { supabase, Subscription, Invoice, SubscriptionHistory } from '@/lib/supabase';
 import { Check, Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PLAN_DEFINITIONS, PlanDefinition } from '@/lib/plans';
@@ -29,7 +29,34 @@ type LocalizedPlan = {
   priceYearly: string;
 };
 
-export default function SubscriptionPage() {
+type InvoiceMeta = {
+  id: string;
+  planType: string;
+  createdAt: string;
+  createdAtMs: number;
+  status: string;
+  amount_cents: number | null;
+  currency: string | null;
+  invoice_link: string | null;
+  invoice_reference: string | null;
+};
+
+type PaymentHistoryItem = {
+  id: string;
+  kind: 'subscription' | 'invoice';
+  status_kind: 'invoice' | 'subscription';
+  created_at: string;
+  plan_type: string | null;
+  status: string | null;
+  amount_cents: number | null;
+  currency: string | null;
+  invoice_link: string | null;
+  invoice_reference: string | null;
+  credits_limit?: number | null;
+  expires_at?: string | null;
+};
+
+function SubscriptionPageContent() {
   const { user } = useAuth();
   const { choose } = useLanguage();
   const localize = useMemo(
@@ -56,6 +83,9 @@ export default function SubscriptionPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
+  const [subscriptionHistory, setSubscriptionHistory] = useState<SubscriptionHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const paymentElementRef = useRef<HTMLDivElement | null>(null);
   const paymentElementInstance = useRef<any>(null);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'annual'>('monthly');
@@ -194,9 +224,205 @@ export default function SubscriptionPage() {
     if (Number.isNaN(date.getTime())) return isoDate;
     return date.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
   };
+  const formatSubscriptionStatus = (status?: Subscription['status'] | string | null) => {
+    if (!status) return localize('Non disponible', 'Not available');
+    switch (status) {
+      case 'active':
+        return localize('Actif', 'Active');
+      case 'cancelled':
+        return localize('Annulé', 'Cancelled');
+      case 'expired':
+        return localize('Expiré', 'Expired');
+      case 'refunded':
+        return localize('Remboursé', 'Refunded');
+      default:
+        return status;
+    }
+  };
+  const subscriptionStatusClassName = (status?: Subscription['status'] | string | null) => {
+    switch (status) {
+      case 'active':
+        return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+      case 'cancelled':
+        return 'border-amber-200 bg-amber-50 text-amber-700';
+      case 'expired':
+        return 'border-slate-200 bg-slate-50 text-slate-600';
+      case 'refunded':
+        return 'border-slate-200 bg-slate-50 text-slate-600';
+      default:
+        return 'border-slate-200 bg-slate-50 text-slate-500';
+    }
+  };
+  const formatInvoiceStatus = (status?: string | null) => {
+    if (!status) return localize('Non disponible', 'Not available');
+    const normalized = status.toLowerCase();
+    switch (normalized) {
+      case 'paid':
+        return localize('Payé', 'Paid');
+      case 'open':
+        return localize('Ouverte', 'Open');
+      case 'void':
+        return localize('Annulée', 'Void');
+      case 'uncollectible':
+        return localize('Irrécouvrable', 'Uncollectible');
+      case 'draft':
+        return localize('Brouillon', 'Draft');
+      case 'refunded':
+        return localize('Remboursé', 'Refunded');
+      default:
+        return status;
+    }
+  };
+  const invoiceStatusClassName = (status?: string | null) => {
+    const normalized = status?.toLowerCase();
+    switch (normalized) {
+      case 'paid':
+        return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+      case 'open':
+        return 'border-amber-200 bg-amber-50 text-amber-700';
+      case 'refunded':
+        return 'border-slate-200 bg-slate-50 text-slate-600';
+      case 'void':
+        return 'border-slate-200 bg-slate-50 text-slate-600';
+      case 'uncollectible':
+        return 'border-red-200 bg-red-50 text-red-700';
+      case 'draft':
+        return 'border-slate-200 bg-slate-50 text-slate-500';
+      default:
+        return 'border-slate-200 bg-slate-50 text-slate-500';
+    }
+  };
   const formattedExpiryLabel = nextExpiryDate
     ? formatDate(nextExpiryDate.toISOString())
     : localize('Non défini', 'Not set');
+  const subscriptionStatusLabel = formatSubscriptionStatus(subscription?.status);
+  const subscriptionStatusBadgeClass = subscriptionStatusClassName(subscription?.status);
+  const paymentHistoryLoading = invoicesLoading || historyLoading;
+  const paymentHistoryError = invoicesError || historyError;
+  const paymentHistoryItems = useMemo<PaymentHistoryItem[]>(() => {
+    const invoiceMeta: InvoiceMeta[] = invoices.map((invoice) => ({
+      id: invoice.id,
+      planType: (invoice.plan_type || '').toLowerCase(),
+      createdAt: invoice.created_at,
+      createdAtMs: Date.parse(invoice.created_at || ''),
+      status: (invoice.payment_status || '').toLowerCase(),
+      amount_cents: invoice.amount_total_cents ?? null,
+      currency: invoice.currency ?? null,
+      invoice_link: invoice.invoice_pdf_url || invoice.hosted_invoice_url || null,
+      invoice_reference: invoice.invoice_id || invoice.id || null,
+    }));
+    const dateKey = (value?: string | null) => {
+      if (!value) return '';
+      const time = Date.parse(value);
+      if (!Number.isFinite(time)) return value;
+      return new Date(time).toISOString().slice(0, 10);
+    };
+    const historyByPeriod = new Map<string, SubscriptionHistory>();
+    subscriptionHistory.forEach((entry) => {
+      const planKey = (entry.plan_type || '').toLowerCase();
+      const startKey = dateKey(entry.started_at || entry.created_at || '');
+      const subscriptionKey = entry.subscription_id || '';
+      const key = `${subscriptionKey}::${planKey}::${startKey}`;
+      const existing = historyByPeriod.get(key);
+      if (!existing) {
+        historyByPeriod.set(key, entry);
+        return;
+      }
+      const existingTime = Date.parse(existing.created_at || '');
+      const entryTime = Date.parse(entry.created_at || '');
+      if (!Number.isFinite(existingTime) || entryTime >= existingTime) {
+        historyByPeriod.set(key, entry);
+      }
+    });
+
+    const normalizedHistory: SubscriptionHistory[] = Array.from(historyByPeriod.values());
+    const invoicesByPlan = new Map<string, InvoiceMeta[]>();
+    invoiceMeta.forEach((invoice) => {
+      if (!invoice.planType) return;
+      const list = invoicesByPlan.get(invoice.planType) ?? [];
+      list.push(invoice);
+      invoicesByPlan.set(invoice.planType, list);
+    });
+    invoicesByPlan.forEach((list) => list.sort((a, b) => a.createdAtMs - b.createdAtMs));
+
+    const usedInvoiceIds = new Set<string>();
+    const matchWindowMs = 45 * 24 * 60 * 60 * 1000;
+
+    const pickInvoiceForEntry = (entry: SubscriptionHistory): InvoiceMeta | null => {
+      const planKey = (entry.plan_type || '').toLowerCase();
+      if (!planKey) return null;
+      const invoicesForPlan = invoicesByPlan.get(planKey);
+      if (!invoicesForPlan || invoicesForPlan.length === 0) {
+        return null;
+      }
+      const targetTime = Date.parse(entry.started_at || entry.created_at || '');
+      let best: InvoiceMeta | null = null;
+      let bestId: string | null = null;
+      let bestDelta = Number.POSITIVE_INFINITY;
+
+      invoicesForPlan.forEach((invoice) => {
+        if (usedInvoiceIds.has(invoice.id)) return;
+        if (!Number.isFinite(invoice.createdAtMs) || !Number.isFinite(targetTime)) return;
+        const delta = Math.abs(invoice.createdAtMs - targetTime);
+        if (delta < bestDelta) {
+          bestDelta = delta;
+          best = invoice;
+          bestId = invoice.id;
+        }
+      });
+
+      if (best && bestId && bestDelta <= matchWindowMs) {
+        usedInvoiceIds.add(bestId);
+        return best;
+      }
+
+      const remaining = invoicesForPlan.filter((invoice) => !usedInvoiceIds.has(invoice.id));
+      if (remaining.length === 1) {
+        usedInvoiceIds.add(remaining[0].id);
+        return remaining[0];
+      }
+      return null;
+    };
+
+    const subscriptionItems = normalizedHistory.map((entry) => {
+      const matchedInvoice = pickInvoiceForEntry(entry);
+      const statusFromInvoice = matchedInvoice?.status || null;
+      const status = statusFromInvoice || entry.status || null;
+      return {
+        id: `subscription-${entry.id}`,
+        kind: 'subscription' as const,
+        status_kind: statusFromInvoice ? ('invoice' as const) : ('subscription' as const),
+        created_at: matchedInvoice?.createdAt || entry.started_at || entry.created_at,
+        plan_type: entry.plan_type ?? null,
+        status,
+        amount_cents: matchedInvoice?.amount_cents ?? null,
+        currency: matchedInvoice?.currency ?? null,
+        invoice_link: matchedInvoice?.invoice_link ?? null,
+        invoice_reference: matchedInvoice?.invoice_reference ?? null,
+        credits_limit: entry.credits_limit ?? null,
+        expires_at: entry.expires_at ?? null,
+      };
+    });
+
+    const invoiceItems = invoiceMeta
+      .filter((invoice) => !usedInvoiceIds.has(invoice.id))
+      .map((invoice) => ({
+        id: `invoice-${invoice.id}`,
+        kind: 'invoice' as const,
+        status_kind: 'invoice' as const,
+        created_at: invoice.createdAt,
+        plan_type: invoice.planType || null,
+        status: invoice.status || null,
+        amount_cents: invoice.amount_cents ?? null,
+        currency: invoice.currency ?? null,
+        invoice_link: invoice.invoice_link ?? null,
+        invoice_reference: invoice.invoice_reference ?? null,
+      }));
+
+    const merged = [...subscriptionItems, ...invoiceItems];
+    merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return merged;
+  }, [invoices, subscriptionHistory]);
 
   useEffect(() => {
     if (user) {
@@ -207,6 +433,12 @@ export default function SubscriptionPage() {
   useEffect(() => {
     if (user) {
       loadInvoices();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      loadSubscriptionHistory();
     }
   }, [user]);
 
@@ -440,8 +672,8 @@ export default function SubscriptionPage() {
     setActionLoadingPlan(null);
   };
 
-  const loadInvoices = async () => {
-    if (!user) return;
+  const loadInvoices = async (): Promise<Invoice[]> => {
+    if (!user) return [];
     setInvoicesLoading(true);
     setInvoicesError(null);
     try {
@@ -449,18 +681,54 @@ export default function SubscriptionPage() {
         .from('invoices')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setInvoices(data ?? []);
+      setInvoices((prev) => {
+        if (data && data.length > 0) return data;
+        if (prev.length > 0) return prev;
+        return data ?? [];
+      });
+      if (data && data.length > 0) {
+        return data;
+      }
+      if (invoices.length > 0) {
+        return invoices;
+      }
+      return data ?? [];
     } catch (error) {
       console.error('Error loading invoices:', error);
       setInvoicesError(
         localize("Impossible de charger l'historique des paiements.", 'Unable to load payment history.')
       );
+      return invoices;
     } finally {
       setInvoicesLoading(false);
+    }
+  };
+
+  const loadSubscriptionHistory = async (): Promise<SubscriptionHistory[]> => {
+    if (!user) return [];
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const { data, error } = await supabase
+        .from('subscription_history')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSubscriptionHistory(data ?? []);
+      return data ?? [];
+    } catch (error) {
+      console.error('Error loading subscription history:', error);
+      setHistoryError(
+        localize("Impossible de charger l'historique des abonnements.", 'Unable to load subscription history.')
+      );
+      return subscriptionHistory;
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -486,17 +754,19 @@ export default function SubscriptionPage() {
     setStatusMessage(null);
     setActionLoadingPlan('refund');
     try {
-      const eligibleInvoice = invoices?.find((invoice) => invoice?.stripe_payment_intent_id);
-      const fallbackInvoice = invoices?.[0];
-      const invoiceId = eligibleInvoice?.id ?? fallbackInvoice?.id ?? null;
-      const paymentIntentId = eligibleInvoice?.stripe_payment_intent_id ?? null;
+      const currentInvoices = invoices.length > 0 ? invoices : await loadInvoices();
+      const eligibleInvoice = currentInvoices?.find((invoice) => invoice?.stripe_payment_intent_id);
+      const fallbackInvoice = currentInvoices?.[0];
+      const targetInvoice = eligibleInvoice ?? fallbackInvoice ?? null;
+      const invoiceId = targetInvoice?.id ?? null;
+      const paymentIntentId = targetInvoice?.stripe_payment_intent_id ?? null;
 
       const targetUserId = subscription?.user_id ?? user.id;
       if (!targetUserId) {
         throw new Error(localize('Utilisateur introuvable.', 'Unable to determine user ID.'));
       }
 
-      if (!invoiceId || !paymentIntentId) {
+      if (!invoiceId) {
         throw new Error(
           localize(
             'Aucune facture disponible pour le moment. Réessayez après la confirmation du paiement.',
@@ -889,7 +1159,7 @@ export default function SubscriptionPage() {
                 <div>
                   <p className="text-xs uppercase tracking-wide text-slate-300">{localize('Statut', 'Status')}</p>
                   <Badge className={`mt-2 border border-white/20 ${subscription.status === 'active' ? 'bg-emerald-500/20 text-emerald-100' : 'bg-white/10 text-white'}`}>
-                    {subscription.status === 'active' ? localize('Actif', 'Active') : subscription.status}
+                    {formatSubscriptionStatus(subscription.status)}
                   </Badge>
                 </div>
                 <div>
@@ -960,7 +1230,7 @@ export default function SubscriptionPage() {
                   <Button
                     variant="secondary"
                     onClick={handleRefundRequest}
-                    disabled={!subscription || !user || actionLoadingPlan === 'refund'}
+                    disabled={!subscription || !user || actionLoadingPlan === 'refund' || invoicesLoading}
                   >
                     {actionLoadingPlan === 'refund' ? (
                       <>
@@ -1132,17 +1402,17 @@ export default function SubscriptionPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {invoicesError && (
+            {paymentHistoryError && (
               <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {invoicesError}
+                {paymentHistoryError}
               </div>
             )}
-            {invoicesLoading ? (
+            {paymentHistoryLoading ? (
               <div className="flex items-center gap-2 text-sm text-slate-600">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {localize('Chargement des transactions...', 'Loading transactions...')}
               </div>
-            ) : invoices.length === 0 ? (
+            ) : paymentHistoryItems.length === 0 ? (
               <p className="text-sm text-slate-600">
                 {localize('Aucune transaction trouvée pour le moment.', 'No payment history yet.')}
               </p>
@@ -1151,36 +1421,46 @@ export default function SubscriptionPage() {
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase text-slate-500">
-                      <th className="px-2 py-2 font-medium">{localize('Date', 'Date')}</th>
+                      <th className="px-2 py-2 font-medium">{localize('Date de paiement', 'Payment date')}</th>
                       <th className="px-2 py-2 font-medium">{localize('Plan', 'Plan')}</th>
-                      <th className="px-2 py-2 font-medium">{localize('Montant', 'Amount')}</th>
                       <th className="px-2 py-2 font-medium">{localize('Statut', 'Status')}</th>
-                      <th className="px-2 py-2 font-medium">{localize('Carte', 'Card')}</th>
+                      <th className="px-2 py-2 font-medium">{localize('Montant', 'Amount')}</th>
                       <th className="px-2 py-2 font-medium">{localize('Facture', 'Invoice')}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {invoices.map((invoice) => {
-                      const readablePlan =
-                        planNameMap[invoice.plan_type as keyof typeof planNameMap] ||
-                        invoice.plan_type.charAt(0).toUpperCase() + invoice.plan_type.slice(1);
-                      const statusLabel = invoice.payment_status || localize('Inconnu', 'Unknown');
-                      const cardLabel = invoice.card_brand && invoice.card_last4
-                        ? `${invoice.card_brand.toUpperCase()} •••• ${invoice.card_last4}`
+                    {paymentHistoryItems.map((item) => {
+                      const planType = item.plan_type;
+                      const readablePlan = planType
+                        ? planNameMap[planType as keyof typeof planNameMap] ||
+                          planType.charAt(0).toUpperCase() + planType.slice(1)
                         : localize('Non disponible', 'Not available');
-                      const invoiceLink =
-                        invoice.hosted_invoice_url ||
-                        invoice.invoice_pdf_url ||
-                        null;
+                      const invoiceLink = item.invoice_link || null;
+                      const statusKind = item.status_kind === 'invoice' ? 'invoice' : 'subscription';
+                      const statusLabel =
+                        statusKind === 'invoice'
+                          ? formatInvoiceStatus(item.status)
+                          : formatSubscriptionStatus(item.status);
+                      const statusClass =
+                        statusKind === 'invoice'
+                          ? invoiceStatusClassName(item.status)
+                          : subscriptionStatusClassName(item.status);
+                      const amountLabel =
+                        typeof item.amount_cents === 'number'
+                          ? formatAmount(item.amount_cents, item.currency ?? undefined)
+                          : '—';
                       return (
-                        <tr key={invoice.id} className="border-t border-slate-100">
-                          <td className="px-2 py-3 text-slate-700">{formatDate(invoice.created_at)}</td>
+                        <tr key={item.id} className="border-t border-slate-100">
+                          <td className="px-2 py-3 text-slate-700">{formatDate(item.created_at)}</td>
                           <td className="px-2 py-3 text-slate-700">{readablePlan}</td>
-                          <td className="px-2 py-3 font-medium text-slate-900">
-                            {formatAmount(invoice.amount_total_cents, invoice.currency)}
+                          <td className="px-2 py-3 text-slate-700">
+                            <Badge variant="outline" className={statusClass}>
+                              {statusLabel}
+                            </Badge>
                           </td>
-                          <td className="px-2 py-3 text-slate-700">{statusLabel}</td>
-                          <td className="px-2 py-3 text-slate-700">{cardLabel}</td>
+                          <td className="px-2 py-3 font-medium text-slate-900">
+                            {amountLabel}
+                          </td>
                           <td className="px-2 py-3 text-slate-700">
                             {invoiceLink ? (
                               <Button variant="outline" size="sm" asChild>
@@ -1188,6 +1468,8 @@ export default function SubscriptionPage() {
                                   {localize('Télécharger', 'Download')}
                                 </a>
                               </Button>
+                            ) : item.invoice_reference ? (
+                              <span className="text-slate-600">{item.invoice_reference}</span>
                             ) : (
                               <span className="text-slate-500">{localize('Non disponible', 'Not available')}</span>
                             )}
@@ -1224,8 +1506,8 @@ export default function SubscriptionPage() {
               </h4>
               <p className="text-sm text-slate-600">
                 {localize(
-                  'Oui, vous pouvez upgrader ou downgrader votre plan à tout moment. Les changements prennent effet immédiatement.',
-                  'Yes, you can upgrade or downgrade whenever you want. Changes take effect immediately.'
+                  'Les modifications seront appliquées lors du prochain cycle de facturation.',
+                  'Changes will take effect at the next billing cycle.'
                 )}
               </p>
             </div>
@@ -1317,5 +1599,19 @@ export default function SubscriptionPage() {
         </DialogContent>
       </Dialog>
     </DashboardLayout>
+  );
+}
+
+export default function SubscriptionPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-full min-h-[400px] items-center justify-center text-sm text-muted-foreground">
+          Chargement de votre abonnement...
+        </div>
+      }
+    >
+      <SubscriptionPageContent />
+    </Suspense>
   );
 }

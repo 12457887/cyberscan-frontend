@@ -6,12 +6,16 @@ export async function POST(req: Request) {
   try {
     const backendUrl =
       process.env.BACKEND_URL ||
-      (process.env.NODE_ENV !== 'production' ? 'http://localhost:8000' : undefined) ||
+      (process.env.NODE_ENV !== 'production'
+        ? 'http://localhost:8000'
+        : undefined) ||
       process.env.NEXT_PUBLIC_BACKEND_URL ||
       'http://localhost:8000';
 
     const body = await req.text();
-    const cookieStore = cookies();
+
+    // ✅ NEXT 15 : cookies() est async
+    const cookieStore = await cookies();
 
     const accessToken = cookieStore.get('sb-access-token')?.value;
     let csrfToken = cookieStore.get('csrf-token')?.value;
@@ -33,13 +37,15 @@ export async function POST(req: Request) {
     if (accessToken) {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
-    const backendKey = process.env.BACKEND_API_KEY || process.env.NEXT_PUBLIC_BACKEND_API_KEY;
+
+    const backendKey =
+      process.env.BACKEND_API_KEY || process.env.NEXT_PUBLIC_BACKEND_API_KEY;
     if (backendKey) {
       headers['x-backend-api-key'] = backendKey;
     }
 
-    // --- COOKIES (❗CORRIGÉ) ---
-    const incomingCookies = req.headers.get('cookie') || "";
+    // --- COOKIES À FORWARD ---
+    const incomingCookies = req.headers.get('cookie') || '';
 
     const proxyCookies = [
       `csrf-token=${csrfToken}`,
@@ -48,14 +54,17 @@ export async function POST(req: Request) {
       .filter(Boolean)
       .join('; ');
 
-    headers['Cookie'] = [proxyCookies, incomingCookies].filter(Boolean).join('; ');
+    headers['Cookie'] = [proxyCookies, incomingCookies]
+      .filter(Boolean)
+      .join('; ');
 
-    // --- Route Stripe ---
+    // --- ROUTING STRIPE ---
     let targetPath = '/stripe/create-checkout';
     let forwardBody = body;
 
     try {
       const parsed = body ? JSON.parse(body) : null;
+
       if (parsed?.action === 'sync-subscription') {
         targetPath = '/stripe/sync-subscription';
         delete parsed.action;
@@ -69,9 +78,11 @@ export async function POST(req: Request) {
         delete parsed.action;
         forwardBody = JSON.stringify(parsed);
       }
-    } catch (e) {}
+    } catch {
+      // ignore JSON parse errors
+    }
 
-    // --- ENVOI BACKEND ---
+    // --- CALL BACKEND ---
     const res = await fetch(`${backendUrl}${targetPath}`, {
       method: 'POST',
       headers,
@@ -83,12 +94,13 @@ export async function POST(req: Request) {
     const response = new NextResponse(payload, {
       status: res.status,
       headers: {
-        'content-type': res.headers.get('content-type') || 'application/json',
+        'content-type':
+          res.headers.get('content-type') || 'application/json',
       },
     });
 
-    // Set CSRF cookie if missing
-    if (shouldSetCsrfCookie) {
+    // --- SET CSRF COOKIE ---
+    if (shouldSetCsrfCookie && csrfToken) {
       response.cookies.set('csrf-token', csrfToken, {
         httpOnly: false,
         secure: process.env.NODE_ENV === 'production',
@@ -101,9 +113,14 @@ export async function POST(req: Request) {
     return response;
   } catch (error) {
     console.error('Stripe proxy error', error);
-    return new Response(JSON.stringify({ error: "Impossible de créer la session de paiement." }), {
-      status: 500,
-      headers: { 'content-type': 'application/json' },
-    });
+    return new NextResponse(
+      JSON.stringify({
+        error: 'Impossible de créer la session de paiement.',
+      }),
+      {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+      }
+    );
   }
 }

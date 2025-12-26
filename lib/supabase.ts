@@ -27,6 +27,18 @@ export type Subscription = {
   updated_at: string | null;
 };
 
+export type SubscriptionHistory = {
+  id: string;
+  subscription_id?: string | null;
+  user_id: string;
+  plan_type?: 'free' | 'basic' | 'pro' | 'enterprise' | string | null;
+  status?: 'active' | 'cancelled' | 'expired' | string | null;
+  credits_limit?: number | null;
+  started_at?: string | null;
+  expires_at?: string | null;
+  created_at: string;
+};
+
 export type Credits = {
   id: string;
   user_id: string;
@@ -108,7 +120,7 @@ export type RefundRequest = {
   amount_cents?: number | null;
   currency?: string | null;
   reason?: string | null;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'accepted' | 'rejected';
   admin_id?: string | null;
   decision_reason?: string | null;
   stripe_refund_id?: string | null;
