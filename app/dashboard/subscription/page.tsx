@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { supabase, Subscription, Invoice, SubscriptionHistory } from '@/lib/supabase';
+import { supabase, Subscription, Invoice } from '@/lib/supabase';
 import { Check, Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PLAN_DEFINITIONS, PlanDefinition } from '@/lib/plans';
@@ -56,9 +56,6 @@ function SubscriptionPageContent() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
-  const [subscriptionHistory, setSubscriptionHistory] = useState<SubscriptionHistory[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
   const paymentElementRef = useRef<HTMLDivElement | null>(null);
   const paymentElementInstance = useRef<any>(null);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'annual'>('monthly');
@@ -266,8 +263,8 @@ function SubscriptionPageContent() {
     : localize('Non défini', 'Not set');
   const subscriptionStatusLabel = formatSubscriptionStatus(subscription?.status);
   const subscriptionStatusBadgeClass = subscriptionStatusClassName(subscription?.status);
-  const paymentHistoryLoading = invoicesLoading || historyLoading;
-  const paymentHistoryError = invoicesError || historyError;
+  const paymentHistoryLoading = invoicesLoading;
+  const paymentHistoryError = invoicesError;
   const paymentHistoryItems = useMemo(() => {
     const invoiceItems = invoices.map((invoice) => ({
       id: `invoice-${invoice.id}`,
@@ -280,23 +277,9 @@ function SubscriptionPageContent() {
       invoice_link: invoice.invoice_pdf_url || invoice.hosted_invoice_url || null,
       invoice_reference: invoice.invoice_id || invoice.id || null,
     }));
-    const subscriptionItems = subscriptionHistory.map((entry) => ({
-      id: `subscription-${entry.id}`,
-      kind: 'subscription' as const,
-      created_at: entry.started_at || entry.created_at,
-      plan_type: entry.plan_type ?? null,
-      status: entry.status ?? null,
-      amount_cents: null,
-      currency: null,
-      invoice_link: null,
-      invoice_reference: null,
-      credits_limit: entry.credits_limit ?? null,
-      expires_at: entry.expires_at ?? null,
-    }));
-    const merged = [...invoiceItems, ...subscriptionItems];
-    merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    return merged;
-  }, [invoices, subscriptionHistory]);
+    invoiceItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return invoiceItems;
+  }, [invoices]);
 
   useEffect(() => {
     if (user) {
@@ -307,12 +290,6 @@ function SubscriptionPageContent() {
   useEffect(() => {
     if (user) {
       loadInvoices();
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (user) {
-      loadSubscriptionHistory();
     }
   }, [user]);
 
@@ -578,31 +555,6 @@ function SubscriptionPageContent() {
       return invoices;
     } finally {
       setInvoicesLoading(false);
-    }
-  };
-
-  const loadSubscriptionHistory = async (): Promise<SubscriptionHistory[]> => {
-    if (!user) return [];
-    setHistoryLoading(true);
-    setHistoryError(null);
-    try {
-      const { data, error } = await supabase
-        .from('subscription_history')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setSubscriptionHistory(data ?? []);
-      return data ?? [];
-    } catch (error) {
-      console.error('Error loading subscription history:', error);
-      setHistoryError(
-        localize("Impossible de charger l'historique des abonnements.", 'Unable to load subscription history.')
-      );
-      return subscriptionHistory;
-    } finally {
-      setHistoryLoading(false);
     }
   };
 
