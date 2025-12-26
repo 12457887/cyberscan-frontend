@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { supabase, Subscription, Invoice } from '@/lib/supabase';
+import { supabase, Subscription, Invoice, SubscriptionHistory } from '@/lib/supabase';
 import { Check, Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PLAN_DEFINITIONS, PlanDefinition } from '@/lib/plans';
@@ -27,6 +27,33 @@ type LocalizedPlan = {
   features: string[];
   priceMonthly: string;
   priceYearly: string;
+};
+
+type InvoiceMeta = {
+  id: string;
+  planType: string;
+  createdAt: string;
+  createdAtMs: number;
+  status: string;
+  amount_cents: number | null;
+  currency: string | null;
+  invoice_link: string | null;
+  invoice_reference: string | null;
+};
+
+type PaymentHistoryItem = {
+  id: string;
+  kind: 'subscription' | 'invoice';
+  status_kind: 'invoice' | 'subscription';
+  created_at: string;
+  plan_type: string | null;
+  status: string | null;
+  amount_cents: number | null;
+  currency: string | null;
+  invoice_link: string | null;
+  invoice_reference: string | null;
+  credits_limit?: number | null;
+  expires_at?: string | null;
 };
 
 function SubscriptionPageContent() {
@@ -56,6 +83,9 @@ function SubscriptionPageContent() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
+  const [subscriptionHistory, setSubscriptionHistory] = useState<SubscriptionHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const paymentElementRef = useRef<HTMLDivElement | null>(null);
   const paymentElementInstance = useRef<any>(null);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'annual'>('monthly');
@@ -194,7 +224,7 @@ function SubscriptionPageContent() {
     if (Number.isNaN(date.getTime())) return isoDate;
     return date.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
   };
-  const formatSubscriptionStatus = (status?: Subscription['status'] | null) => {
+  const formatSubscriptionStatus = (status?: Subscription['status'] | string | null) => {
     if (!status) return localize('Non disponible', 'Not available');
     switch (status) {
       case 'active':
@@ -203,17 +233,21 @@ function SubscriptionPageContent() {
         return localize('Annulé', 'Cancelled');
       case 'expired':
         return localize('Expiré', 'Expired');
+      case 'refunded':
+        return localize('Remboursé', 'Refunded');
       default:
         return status;
     }
   };
-  const subscriptionStatusClassName = (status?: Subscription['status'] | null) => {
+  const subscriptionStatusClassName = (status?: Subscription['status'] | string | null) => {
     switch (status) {
       case 'active':
         return 'border-emerald-200 bg-emerald-50 text-emerald-700';
       case 'cancelled':
         return 'border-amber-200 bg-amber-50 text-amber-700';
       case 'expired':
+        return 'border-slate-200 bg-slate-50 text-slate-600';
+      case 'refunded':
         return 'border-slate-200 bg-slate-50 text-slate-600';
       default:
         return 'border-slate-200 bg-slate-50 text-slate-500';
@@ -263,23 +297,132 @@ function SubscriptionPageContent() {
     : localize('Non défini', 'Not set');
   const subscriptionStatusLabel = formatSubscriptionStatus(subscription?.status);
   const subscriptionStatusBadgeClass = subscriptionStatusClassName(subscription?.status);
-  const paymentHistoryLoading = invoicesLoading;
-  const paymentHistoryError = invoicesError;
-  const paymentHistoryItems = useMemo(() => {
-    const invoiceItems = invoices.map((invoice) => ({
-      id: `invoice-${invoice.id}`,
-      kind: 'invoice' as const,
-      created_at: invoice.created_at,
-      plan_type: invoice.plan_type,
-      status: invoice.payment_status || null,
+  const paymentHistoryLoading = invoicesLoading || historyLoading;
+  const paymentHistoryError = invoicesError || historyError;
+  const paymentHistoryItems = useMemo<PaymentHistoryItem[]>(() => {
+    const invoiceMeta: InvoiceMeta[] = invoices.map((invoice) => ({
+      id: invoice.id,
+      planType: (invoice.plan_type || '').toLowerCase(),
+      createdAt: invoice.created_at,
+      createdAtMs: Date.parse(invoice.created_at || ''),
+      status: (invoice.payment_status || '').toLowerCase(),
       amount_cents: invoice.amount_total_cents ?? null,
       currency: invoice.currency ?? null,
       invoice_link: invoice.invoice_pdf_url || invoice.hosted_invoice_url || null,
       invoice_reference: invoice.invoice_id || invoice.id || null,
     }));
-    invoiceItems.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    return invoiceItems;
-  }, [invoices]);
+    const dateKey = (value?: string | null) => {
+      if (!value) return '';
+      const time = Date.parse(value);
+      if (!Number.isFinite(time)) return value;
+      return new Date(time).toISOString().slice(0, 10);
+    };
+    const historyByPeriod = new Map<string, SubscriptionHistory>();
+    subscriptionHistory.forEach((entry) => {
+      const planKey = (entry.plan_type || '').toLowerCase();
+      const startKey = dateKey(entry.started_at || entry.created_at || '');
+      const subscriptionKey = entry.subscription_id || '';
+      const key = `${subscriptionKey}::${planKey}::${startKey}`;
+      const existing = historyByPeriod.get(key);
+      if (!existing) {
+        historyByPeriod.set(key, entry);
+        return;
+      }
+      const existingTime = Date.parse(existing.created_at || '');
+      const entryTime = Date.parse(entry.created_at || '');
+      if (!Number.isFinite(existingTime) || entryTime >= existingTime) {
+        historyByPeriod.set(key, entry);
+      }
+    });
+
+    const normalizedHistory: SubscriptionHistory[] = Array.from(historyByPeriod.values());
+    const invoicesByPlan = new Map<string, InvoiceMeta[]>();
+    invoiceMeta.forEach((invoice) => {
+      if (!invoice.planType) return;
+      const list = invoicesByPlan.get(invoice.planType) ?? [];
+      list.push(invoice);
+      invoicesByPlan.set(invoice.planType, list);
+    });
+    invoicesByPlan.forEach((list) => list.sort((a, b) => a.createdAtMs - b.createdAtMs));
+
+    const usedInvoiceIds = new Set<string>();
+    const matchWindowMs = 45 * 24 * 60 * 60 * 1000;
+
+    const pickInvoiceForEntry = (entry: SubscriptionHistory): InvoiceMeta | null => {
+      const planKey = (entry.plan_type || '').toLowerCase();
+      if (!planKey) return null;
+      const invoicesForPlan = invoicesByPlan.get(planKey);
+      if (!invoicesForPlan || invoicesForPlan.length === 0) {
+        return null;
+      }
+      const targetTime = Date.parse(entry.started_at || entry.created_at || '');
+      let best: InvoiceMeta | null = null;
+      let bestId: string | null = null;
+      let bestDelta = Number.POSITIVE_INFINITY;
+
+      invoicesForPlan.forEach((invoice) => {
+        if (usedInvoiceIds.has(invoice.id)) return;
+        if (!Number.isFinite(invoice.createdAtMs) || !Number.isFinite(targetTime)) return;
+        const delta = Math.abs(invoice.createdAtMs - targetTime);
+        if (delta < bestDelta) {
+          bestDelta = delta;
+          best = invoice;
+          bestId = invoice.id;
+        }
+      });
+
+      if (best && bestId && bestDelta <= matchWindowMs) {
+        usedInvoiceIds.add(bestId);
+        return best;
+      }
+
+      const remaining = invoicesForPlan.filter((invoice) => !usedInvoiceIds.has(invoice.id));
+      if (remaining.length === 1) {
+        usedInvoiceIds.add(remaining[0].id);
+        return remaining[0];
+      }
+      return null;
+    };
+
+    const subscriptionItems = normalizedHistory.map((entry) => {
+      const matchedInvoice = pickInvoiceForEntry(entry);
+      const statusFromInvoice = matchedInvoice?.status || null;
+      const status = statusFromInvoice || entry.status || null;
+      return {
+        id: `subscription-${entry.id}`,
+        kind: 'subscription' as const,
+        status_kind: statusFromInvoice ? ('invoice' as const) : ('subscription' as const),
+        created_at: matchedInvoice?.createdAt || entry.started_at || entry.created_at,
+        plan_type: entry.plan_type ?? null,
+        status,
+        amount_cents: matchedInvoice?.amount_cents ?? null,
+        currency: matchedInvoice?.currency ?? null,
+        invoice_link: matchedInvoice?.invoice_link ?? null,
+        invoice_reference: matchedInvoice?.invoice_reference ?? null,
+        credits_limit: entry.credits_limit ?? null,
+        expires_at: entry.expires_at ?? null,
+      };
+    });
+
+    const invoiceItems = invoiceMeta
+      .filter((invoice) => !usedInvoiceIds.has(invoice.id))
+      .map((invoice) => ({
+        id: `invoice-${invoice.id}`,
+        kind: 'invoice' as const,
+        status_kind: 'invoice' as const,
+        created_at: invoice.createdAt,
+        plan_type: invoice.planType || null,
+        status: invoice.status || null,
+        amount_cents: invoice.amount_cents ?? null,
+        currency: invoice.currency ?? null,
+        invoice_link: invoice.invoice_link ?? null,
+        invoice_reference: invoice.invoice_reference ?? null,
+      }));
+
+    const merged = [...subscriptionItems, ...invoiceItems];
+    merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return merged;
+  }, [invoices, subscriptionHistory]);
 
   useEffect(() => {
     if (user) {
@@ -290,6 +433,12 @@ function SubscriptionPageContent() {
   useEffect(() => {
     if (user) {
       loadInvoices();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      loadSubscriptionHistory();
     }
   }, [user]);
 
@@ -555,6 +704,31 @@ function SubscriptionPageContent() {
       return invoices;
     } finally {
       setInvoicesLoading(false);
+    }
+  };
+
+  const loadSubscriptionHistory = async (): Promise<SubscriptionHistory[]> => {
+    if (!user) return [];
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const { data, error } = await supabase
+        .from('subscription_history')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSubscriptionHistory(data ?? []);
+      return data ?? [];
+    } catch (error) {
+      console.error('Error loading subscription history:', error);
+      setHistoryError(
+        localize("Impossible de charger l'historique des abonnements.", 'Unable to load subscription history.')
+      );
+      return subscriptionHistory;
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -1262,16 +1436,17 @@ function SubscriptionPageContent() {
                           planType.charAt(0).toUpperCase() + planType.slice(1)
                         : localize('Non disponible', 'Not available');
                       const invoiceLink = item.invoice_link || null;
+                      const statusKind = item.status_kind === 'invoice' ? 'invoice' : 'subscription';
                       const statusLabel =
-                        item.kind === 'invoice'
+                        statusKind === 'invoice'
                           ? formatInvoiceStatus(item.status)
-                          : formatSubscriptionStatus(item.status as Subscription['status'] | null);
+                          : formatSubscriptionStatus(item.status);
                       const statusClass =
-                        item.kind === 'invoice'
+                        statusKind === 'invoice'
                           ? invoiceStatusClassName(item.status)
-                          : subscriptionStatusClassName(item.status as Subscription['status'] | null);
+                          : subscriptionStatusClassName(item.status);
                       const amountLabel =
-                        item.kind === 'invoice' && typeof item.amount_cents === 'number'
+                        typeof item.amount_cents === 'number'
                           ? formatAmount(item.amount_cents, item.currency ?? undefined)
                           : '—';
                       return (
@@ -1331,8 +1506,8 @@ function SubscriptionPageContent() {
               </h4>
               <p className="text-sm text-slate-600">
                 {localize(
-                  'Oui, vous pouvez upgrader ou downgrader votre plan à tout moment. Les changements prennent effet immédiatement.',
-                  'Yes, you can upgrade or downgrade whenever you want. Changes take effect immediately.'
+                  'Les modifications seront appliquées lors du prochain cycle de facturation.',
+                  'Changes will take effect at the next billing cycle.'
                 )}
               </p>
             </div>
