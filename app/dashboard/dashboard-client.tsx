@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -58,6 +58,14 @@ type VulnerabilityTrendPoint = {
   medium: number;
   high: number;
   critical: number;
+};
+
+type TrendScan = Pick<Scan, 'id' | 'created_at' | 'completed_at' | 'risk_level' | 'vulnerabilities_count'>;
+
+type FreeScanTrendRow = {
+  created_at: string;
+  severity_counts: Record<string, number> | null;
+  risk_level: string | null;
 };
 
 const buildTrendBase = (
@@ -145,6 +153,7 @@ export default function DashboardPageClient() {
   const [refundError, setRefundError] = useState<string | null>(null);
   const [refundLoading, setRefundLoading] = useState(false);
   const [refundActionId, setRefundActionId] = useState<string | null>(null);
+  const chartRef = useRef<HTMLDivElement | null>(null);
 
   const isAdminUser = profile?.role === 'admin';
   const planNames = useMemo(
@@ -198,6 +207,28 @@ export default function DashboardPageClient() {
     }
   }, [user, isAdminUser]);
 
+  useEffect(() => {
+    if (!vulnerabilityTrend.length) return;
+    const totals = vulnerabilityTrend.reduce(
+      (acc, entry) => {
+        acc.low += entry.low;
+        acc.medium += entry.medium;
+        acc.high += entry.high;
+        acc.critical += entry.critical;
+        return acc;
+      },
+      { low: 0, medium: 0, high: 0, critical: 0 }
+    );
+    const size = chartRef.current
+      ? { width: chartRef.current.clientWidth, height: chartRef.current.clientHeight }
+      : null;
+    console.info('[VulnerabilityTrend] render', {
+      points: vulnerabilityTrend.length,
+      totals,
+      size,
+    });
+  }, [vulnerabilityTrend]);
+
   const loadDashboardData = async () => {
     if (!user) return;
 
@@ -206,27 +237,60 @@ export default function DashboardPageClient() {
       setRefundError(null);
     }
 
+    let baseTrend: VulnerabilityTrendPoint[] = [];
+    let trendMap = new Map<string, VulnerabilityTrendPoint>();
+
     try {
       setLoadError(null);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const rangeStart = new Date(today);
       rangeStart.setDate(today.getDate() - (DAYS_RANGE - 1));
-      const rangeStartIso = rangeStart.toISOString();
+      const rangeStartIso = rangeStart.toISOString().split('T')[0] + 'T00:00:00.000Z';  // Forcer 00:00
 
-      const [creditsRes, scansRes, alertsRes] = await Promise.all([
+      [baseTrend, trendMap] = buildTrendBase(rangeStart, DAYS_RANGE, dateFormatter);
+
+      let scanHistoryQuery = supabase
+        .from('scans')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(8);
+
+      if (!isAdminUser) {
+        scanHistoryQuery = scanHistoryQuery.eq('user_id', user.id);
+      }
+
+      let trendScansQuery = supabase
+        .from('scans')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      if (!isAdminUser) {
+        trendScansQuery = trendScansQuery.eq('user_id', user.id);
+      }
+
+      const freeScansPromise = isAdminUser
+        ? supabase
+            .from('free_scans')
+            .select('created_at,severity_counts,risk_level')
+            .gte('created_at', rangeStartIso)
+            .order('created_at', { ascending: false })
+            .limit(200)
+        : Promise.resolve({ data: [], error: null });
+
+      const [creditsRes, scanHistoryRes, alertsRes, trendScansRes, freeScansRes] = await Promise.all([
         supabase.from('credits').select('*').eq('user_id', user.id).maybeSingle(),
-        supabase
-          .from('scans')
-          .select('*')
-          .eq('user_id', user.id)
-          .gte('created_at', rangeStartIso)
-          .order('created_at', { ascending: false }),
+        scanHistoryQuery,
         supabase.from('alerts').select('*').eq('user_id', user.id).eq('is_read', false).limit(5),
+        trendScansQuery,
+        freeScansPromise,
       ]);
 
       if (creditsRes.data) setCredits(creditsRes.data);
-      let scansData = scansRes.data || [];
+      const scansData = scanHistoryRes.data || [];
+      const trendScans = (trendScansRes.data || []) as TrendScan[];
+      const freeScans = (freeScansRes.data || []) as FreeScanTrendRow[];
 
       let ticketsData: Ticket[] = [];
       let refundsData: RefundRequest[] = [];
@@ -306,55 +370,151 @@ export default function DashboardPageClient() {
         setRefundLoading(false);
       }
 
-      if (!scansData.length) {
-        const fallback = await supabase
-          .from('scans')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(8);
-        if (fallback.data) {
-          scansData = fallback.data;
-        }
-      }
-
       setScans(scansData.slice(0, 8));
       if (alertsRes.data) setAlerts(alertsRes.data);
 
-      const [baseTrend, trendMap] = buildTrendBase(rangeStart, DAYS_RANGE, dateFormatter);
+      try {
+        const trendDebug = {
+          rangeStartIso,
+          trendScans: trendScans.length,
+          scanHistory: scansData.length,
+          freeScans: freeScans.length,
+          vulnerabilityRows: 0,
+          severityTotals: { low: 0, medium: 0, high: 0, critical: 0 },
+          fallbackScans: 0,
+          fallbackTotal: 0,
+          freeScansUsed: 0,
+        };
 
-      if (scansData.length) {
-        const scanMap = new Map(scansData.map((scan) => [scan.id, scan]));
-        const scanIds = Array.from(scanMap.keys());
-
-        if (scanIds.length) {
-          const { data: vulnerabilityRows } = await supabase
-            .from('vulnerabilities')
-            .select('scan_id,severity,count')
-            .in('scan_id', scanIds);
-
-          if (vulnerabilityRows) {
-            vulnerabilityRows.forEach((row) => {
-              const severity = (row.severity || '').toLowerCase() as SeverityKey;
-              if (!SEVERITY_KEYS.includes(severity)) return;
-
-              const scan = scanMap.get(row.scan_id);
-              if (!scan) return;
-
-              const createdAt = new Date(scan.created_at);
-              createdAt.setHours(0, 0, 0, 0);
-              const dateKey = createdAt.toISOString().split('T')[0];
-              const trendEntry = trendMap.get(dateKey);
-              if (!trendEntry) return;
-
-              const amount = Number(row.count) || 0;
-              trendEntry[severity] += amount;
-            });
-          }
+        if (!trendScans.length && !freeScans.length) {
+          console.info('[VulnerabilityTrend] no scans in range', trendDebug);
         }
-      }
 
-      setVulnerabilityTrend([...baseTrend]);
+        const scanDateKey = (createdAt?: string | null, completedAt?: string | null) => {
+          const raw = completedAt || createdAt;
+          if (!raw) return null;
+          const createdAtDate = new Date(raw);
+          if (Number.isNaN(createdAtDate.getTime())) return null;
+          createdAtDate.setHours(0, 0, 0, 0);
+          return createdAtDate.toISOString().split('T')[0];
+        };
+
+        const scanHasVulnRows = new Set<string>();
+
+        if (trendScans.length) {
+          const scanMap = new Map(trendScans.map((scan) => [scan.id, scan]));
+          const scanIds = Array.from(scanMap.keys());
+
+          if (scanIds.length) {
+            const { data: vulnerabilityRows, error: vulnerabilityError } = await supabase
+              .from('vulnerabilities')
+              .select('scan_id,severity,count')
+              .in('scan_id', scanIds);
+
+            if (vulnerabilityError) {
+              console.error('Error loading vulnerabilities:', vulnerabilityError);
+            }
+
+            if (vulnerabilityRows) {
+              trendDebug.vulnerabilityRows = vulnerabilityRows.length;
+              vulnerabilityRows.forEach((row) => {
+                const severity = (row.severity || '').toLowerCase() as SeverityKey;
+                if (!SEVERITY_KEYS.includes(severity)) return;
+
+                const scan = scanMap.get(row.scan_id);
+                if (!scan) return;
+
+                const dateKey = scanDateKey(scan.created_at, scan.completed_at);
+                if (!dateKey) return;
+                const trendEntry = trendMap.get(dateKey);
+                if (!trendEntry) return;
+
+                const amount = Number(row.count);
+                if (!Number.isFinite(amount)) return;
+
+                trendEntry[severity] += amount;
+                trendDebug.severityTotals[severity] += amount;
+                scanHasVulnRows.add(row.scan_id);
+              });
+            }
+          }
+
+          trendScans.forEach((scan) => {
+            if (scanHasVulnRows.has(scan.id)) return;
+            const rawCount = Number((scan as TrendScan).vulnerabilities_count);
+            const amount =
+              Number.isFinite(rawCount) && rawCount > 0
+                ? rawCount
+                : (scan as TrendScan).risk_level
+                ? 1
+                : 0;
+            if (amount <= 0) return;
+
+            const severity = (((scan as TrendScan).risk_level || 'low') as string).toLowerCase() as SeverityKey;
+            if (!SEVERITY_KEYS.includes(severity)) return;
+
+            const dateKey = scanDateKey(scan.created_at, (scan as TrendScan).completed_at);
+            if (!dateKey) return;
+
+            const trendEntry = trendMap.get(dateKey);
+            if (!trendEntry) return;
+
+            trendEntry[severity] += amount;
+            trendDebug.fallbackScans += 1;
+            trendDebug.fallbackTotal += amount;
+          });
+        }
+
+        if (isAdminUser && freeScans.length) {
+          freeScans.forEach((scan) => {
+            const dateKey = scanDateKey(scan.created_at);
+            if (!dateKey) return;
+            const trendEntry = trendMap.get(dateKey);
+            if (!trendEntry) return;
+
+            const counts =
+              scan.severity_counts && typeof scan.severity_counts === 'object'
+                ? scan.severity_counts
+                : null;
+            let hadCounts = false;
+
+            if (counts) {
+              SEVERITY_KEYS.forEach((key) => {
+                const amount = Number(counts[key] ?? counts[key.toUpperCase()]);
+                if (!Number.isFinite(amount) || amount <= 0) return;
+                trendEntry[key] += amount;
+                hadCounts = true;
+              });
+            }
+
+            if (!hadCounts && scan.risk_level) {
+              const severity = (scan.risk_level || '').toLowerCase() as SeverityKey;
+              if (SEVERITY_KEYS.includes(severity)) {
+                trendEntry[severity] += 1;
+              }
+            }
+
+            if (hadCounts || scan.risk_level) {
+              trendDebug.freeScansUsed += 1;
+            }
+          });
+        }
+
+        const trendTotals = baseTrend.reduce(
+          (acc, entry) => {
+            acc.low += entry.low;
+            acc.medium += entry.medium;
+            acc.high += entry.high;
+            acc.critical += entry.critical;
+            return acc;
+          },
+          { low: 0, medium: 0, high: 0, critical: 0 }
+        );
+
+        console.info('[VulnerabilityTrend] totals', { ...trendDebug, trendTotals });
+      } catch (trendError) {
+        console.error('Error building vulnerability trend:', trendError);
+      }
     } catch (error) {
       console.error('Error loading dashboard data:', error);
       setLoadError(
@@ -369,6 +529,15 @@ export default function DashboardPageClient() {
         }
       }
     } finally {
+      console.log('[DEBUG] baseTrend avant setState:', baseTrend);
+      console.log('[DEBUG] baseTrend.length:', baseTrend.length);
+  
+      if (baseTrend.length) {
+    // Créer une copie profonde pour forcer la mise à jour du state
+        const trendData = baseTrend.map(entry => ({ ...entry }));
+        console.log('[DEBUG] trendData à envoyer:', trendData);
+        setVulnerabilityTrend(trendData);
+      }
       setLoading(false);
       if (isAdminUser) {
         setRefundLoading(false);
@@ -482,6 +651,19 @@ export default function DashboardPageClient() {
 
   const hasVulnerabilityData = vulnerabilityTrend.some((entry) =>
     SEVERITY_KEYS.some((key) => entry[key] > 0)
+  );
+  const maxVulnerabilityCount = useMemo(
+    () =>
+      vulnerabilityTrend.reduce(
+        (max, entry) => Math.max(max, entry.low, entry.medium, entry.high, entry.critical),
+        0
+      ),
+    [vulnerabilityTrend]
+  );
+  const useDecimalTicks = maxVulnerabilityCount > 0 && maxVulnerabilityCount <= 5;
+  const trendSubtitle = localize(
+    `Vue d'ensemble de l'espace de travail - ${DAYS_RANGE} derniers jours`,
+    `Workspace overview - last ${DAYS_RANGE} days`
   );
 
   const translateAlertContent = (alert: Alert) => {
@@ -773,32 +955,60 @@ export default function DashboardPageClient() {
                   {localize('Synthèse des vulnérabilités', 'Vulnerability summary')}
                 </CardTitle>
               </div>
-              <CardDescription>
-                {localize(
-                  `Évolution sur les ${DAYS_RANGE} derniers jours`,
-                  `Trend over the last ${DAYS_RANGE} days`
-                )}
-              </CardDescription>
+              <CardDescription>{trendSubtitle}</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-1 flex-col">
-              <ChartContainer
-                config={chartConfig}
-                className="h-full min-h-[180px]"
-              >
-                <LineChart data={vulnerabilityTrend} margin={{ left: 12, right: 12, top: 8, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} dy={8} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Line type="monotone" dataKey="critical" stroke="var(--color-critical)" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="high" stroke="var(--color-high)" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="medium" stroke="var(--color-medium)" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="low" stroke="var(--color-low)" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ChartContainer>
-              {!hasVulnerabilityData && (
-                <p className="mt-4 text-sm text-slate-600">
+            <CardContent className="flex flex-1 flex-col overflow-hidden">
+              {vulnerabilityTrend.length > 0 ? (
+                <ChartContainer
+                  config={chartConfig}
+                  className="w-full"
+                  style={{ width: '100%', height: 350 }}
+                >
+                    <LineChart 
+                    data={vulnerabilityTrend} 
+                    margin={{ left: 40, right: 12, top: 12, bottom: 100 }}
+                    width={800}
+                    height={350}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                     <XAxis
+                      dataKey="label"
+                      tickLine={false}
+                      axisLine={true}
+                      stroke="#d1d5db"
+                      dy={8}
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                      interval={vulnerabilityTrend.length > 7 ? Math.floor(vulnerabilityTrend.length / 7) : 0}
+                      tickMargin={8}
+                      tick={{ fontSize: 12, fill: '#6b7280' }}
+                    />
+                     <YAxis
+                      allowDecimals={true}
+                      tickLine={false}
+                      axisLine={true}
+                      stroke="#d1d5db"
+                      width={40}
+                      domain={[0, Math.max(1, maxVulnerabilityCount)]}
+                      tick={false}
+                    />
+                    <ChartTooltip cursor={false} />
+                    <ChartLegend 
+                      verticalAlign="bottom"
+                      height={40}
+                      wrapperStyle={{ paddingTop: '150px' }}
+                      iconType="circle"
+                    />
+
+                    <Line type="monotone" dataKey="critical" stroke="hsl(0, 82%, 60%)" strokeWidth={2.5} dot={false} name="Critical" />
+                    <Line type="monotone" dataKey="high" stroke="hsl(0, 84%, 60%)" strokeWidth={2.5} dot={false} name="High" />
+                    <Line type="monotone" dataKey="medium" stroke="hsl(38, 85%, 55%)" strokeWidth={2.5} dot={false} name="Medium" />
+                    <Line type="monotone" dataKey="low" stroke="hsl(210, 85%, 55%)" strokeWidth={2.5} dot={false} name="Low" />
+                  </LineChart>
+                </ChartContainer>
+              ) : (
+                <p className="text-sm text-slate-600">
                   {localize(
                     'Aucune donnée de vulnérabilité disponible pour cette période.',
                     'No vulnerability data available for this period.'
@@ -809,7 +1019,7 @@ export default function DashboardPageClient() {
           </Card>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        <div className="mt-6 grid gap-6 lg:grid-cols-[2fr_1fr]">
           <Card className="overflow-hidden">
             <CardHeader>
               <CardTitle>{localize('Historique des scans', 'Scan history')}</CardTitle>
