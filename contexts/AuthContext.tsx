@@ -61,6 +61,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    --------------------------*/
   const loadCredits = async (userId: string) => {
     try {
+      const syncCreditsFromServer = async () => {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const accessToken = sessionData?.session?.access_token;
+          const response = await fetch("/service/credits/sync", {
+            method: "POST",
+            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+          });
+          if (!response.ok) {
+            return null;
+          }
+          const payload = await response.json().catch(() => null);
+          const summary = payload?.credits;
+          if (!summary) {
+            return null;
+          }
+          const total = Number(summary.total ?? 0);
+          const used = Number(summary.used ?? 0);
+          const remaining = Number(summary.remaining ?? 0);
+          return {
+            total: Number.isFinite(total) ? total : 0,
+            used: Number.isFinite(used) ? used : 0,
+            remaining: Number.isFinite(remaining) ? remaining : 0,
+          };
+        } catch (error) {
+          console.error("Error syncing credits:", error);
+          return null;
+        }
+      };
+
       const { data } = await supabase
         .from("credits")
         .select("total_credits, used_credits, remaining_credits")
@@ -68,12 +98,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .maybeSingle();
 
       if (data) {
+        const total = Number(data.total_credits ?? 0);
+        const used = Number(data.used_credits ?? 0);
+        const normalizedTotal = Number.isFinite(total) ? total : 0;
+        const normalizedUsed = Number.isFinite(used) ? used : 0;
+        if (normalizedTotal <= 0 && normalizedUsed <= 0) {
+          const synced = await syncCreditsFromServer();
+          if (synced) {
+            setCredits(synced);
+            return;
+          }
+        }
+        const remaining = Math.max(normalizedTotal - normalizedUsed, 0);
         setCredits({
-          total: data.total_credits ?? 0,
-          used: data.used_credits ?? 0,
-          remaining: data.remaining_credits ?? 0,
+          total: normalizedTotal,
+          used: normalizedUsed,
+          remaining,
         });
       } else {
+        const synced = await syncCreditsFromServer();
+        if (synced) {
+          setCredits(synced);
+          return;
+        }
         setCredits(null);
       }
     } catch (err) {
