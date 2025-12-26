@@ -966,8 +966,8 @@ export default function DashboardPageClient() {
                 >
                     <LineChart 
                     data={vulnerabilityTrend} 
-                    margin={{ left: 40, right: 12, top: 12, bottom: 100 }}
-                    width={800}
+                    margin={{ left: 24, right: 16, top: 12, bottom: 64 }}
+                    width={690}
                     height={350}
                   >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
@@ -996,7 +996,7 @@ export default function DashboardPageClient() {
                     <ChartTooltip cursor={false} />
                     <ChartLegend 
                       verticalAlign="bottom"
-                      height={40}
+                      height={60}
                       wrapperStyle={{ paddingTop: '150px' }}
                       iconType="circle"
                     />
