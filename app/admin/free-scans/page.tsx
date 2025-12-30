@@ -73,6 +73,22 @@ const isPrivateOrLocalIp = (ip: string): boolean => {
     trimmed.startsWith('::ffff:172.')
   );
 };
+const severityLetter = (value: string): string => {
+  const normalized = value.trim().toLowerCase();
+  const lookup: Record<string, string> = {
+    critical: 'C',
+    high: 'H',
+    medium: 'M',
+    low: 'L',
+  };
+  return lookup[normalized] ?? normalized.slice(0, 1).toUpperCase();
+};
+const severityRank: Record<string, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
 
 export default function FreeScansAdminPage() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -265,17 +281,26 @@ export default function FreeScansAdminPage() {
 
   const renderRiskBadge = (risk?: string | null) => {
     if (!risk) {
-      return <Badge variant="outline">{localize('Non défini', 'Not set')}</Badge>;
+      return <Badge variant="outline">—</Badge>;
     }
     const normalized = risk.toLowerCase() as keyof typeof riskLabels;
-    const label = riskLabels[normalized] || risk;
+    const fullLabel = riskLabels[normalized] || risk;
+    const label = severityLetter(normalized);
     const color = {
       critical: 'bg-red-100 text-red-700',
       high: 'bg-orange-100 text-orange-800',
       medium: 'bg-amber-50 text-amber-700 border border-amber-200',
       low: 'bg-emerald-100 text-emerald-700',
     }[normalized];
-    return <Badge className={color ?? ''}>{label}</Badge>;
+    return (
+      <Badge
+        className={`min-w-[1.75rem] justify-center ${color ?? ''}`}
+        title={fullLabel}
+        aria-label={fullLabel}
+      >
+        {label}
+      </Badge>
+    );
   };
 
   if (authLoading || loading) {
@@ -345,16 +370,22 @@ export default function FreeScansAdminPage() {
         )}
 
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle>{localize('Filtres', 'Filters')}</CardTitle>
-            <CardDescription>
-              {localize(
-                'Affinez la liste grâce à la recherche, aux niveaux de risque et aux CMS détectés.',
-                'Narrow the list with search, risk levels, and detected CMS.'
-              )}
-            </CardDescription>
+          <CardHeader className="pb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>{localize('Filtres', 'Filters')}</CardTitle>
+              <CardDescription>
+                {localize(
+                  'Affinez la liste grâce à la recherche, aux niveaux de risque et aux CMS détectés.',
+                  'Narrow the list with search, risk levels, and detected CMS.'
+                )}
+              </CardDescription>
+            </div>
+            <Badge variant="secondary" className="bg-slate-100 text-slate-600">
+              {localize('Résultats :', 'Results:')}{' '}
+              <span className="ml-1 text-slate-900">{filteredScans.length}</span>
+            </Badge>
           </CardHeader>
-          <CardContent className="space-y-4 pt-2">
+          <CardContent className="space-y-4 border-t border-slate-100 bg-slate-50/60 pt-4">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-slate-500">
@@ -412,10 +443,6 @@ export default function FreeScansAdminPage() {
                 </label>
               </div>
             </div>
-            <div className="text-xs text-slate-500">
-              {localize('Résultats affichés :', 'Results shown:')}{' '}
-              <span className="font-semibold text-slate-900">{filteredScans.length}</span>
-            </div>
           </CardContent>
         </Card>
 
@@ -436,18 +463,29 @@ export default function FreeScansAdminPage() {
               </p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm border-separate border-spacing-0">
+                <table className="w-full table-fixed text-sm border-separate border-spacing-0">
+                  <colgroup>
+                    <col className="w-[9%]" />
+                    <col className="w-[21%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[6%]" />
+                    <col className="w-[4%]" />
+                    <col className="w-[14%]" />
+                  </colgroup>
                   <thead className="bg-gradient-to-r from-slate-50 via-white to-slate-50 text-slate-600 text-left sticky top-0 z-10 shadow-sm">
                     <tr>
-                      <th className="px-4 py-3 font-semibold w-32">{localize('Date', 'Date')}</th>
-                      <th className="px-4 py-3 font-semibold">{localize('URL', 'URL')}</th>
-                      <th className="px-4 py-3 font-semibold w-48">Email</th>
-                      <th className="px-4 py-3 font-semibold">IP</th>
-                      <th className="px-4 py-3 font-semibold">{localize('Localisation', 'Location')}</th>
-                      <th className="px-4 py-3 font-semibold">CMS</th>
-                      <th className="px-4 py-3 font-semibold">{localize('Risque', 'Risk')}</th>
-                      <th className="px-4 py-3 font-semibold">{localize('Rapport', 'Report')}</th>
-                      <th className="px-4 py-3 font-semibold">{localize('Détails', 'Details')}</th>
+                      <th className="px-3 py-3 text-xs font-semibold text-slate-600">{localize('Date', 'Date')}</th>
+                      <th className="px-3 py-3 text-xs font-semibold text-slate-600">{localize('URL', 'URL')}</th>
+                      <th className="px-3 py-3 text-xs font-semibold text-slate-600">Email</th>
+                      <th className="px-3 py-3 text-xs font-semibold text-slate-600">IP</th>
+                      <th className="px-3 py-3 text-xs font-semibold text-slate-600">{localize('Localisation', 'Location')}</th>
+                      <th className="px-3 py-3 text-xs font-semibold text-slate-600">CMS</th>
+                      <th className="px-3 py-3 pr-6 text-xs font-semibold text-slate-600">{localize('Risque', 'Risk')}</th>
+                      <th className="px-3 py-3 pr-8 text-xs font-semibold text-slate-600 text-center">{localize('Rapport', 'Report')}</th>
+                      <th className="px-3 py-3 pl-8 text-xs font-semibold text-slate-600">{localize('Détails', 'Details')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -456,11 +494,11 @@ export default function FreeScansAdminPage() {
                         key={scan.id}
                         className="border-b border-slate-100 odd:bg-white even:bg-slate-50/40 hover:bg-slate-100/60 transition-colors"
                       >
-                        <td className="px-4 py-3 text-slate-600 tabular-nums whitespace-nowrap w-32">
+                        <td className="px-3 py-2.5 pr-6 text-slate-600 tabular-nums whitespace-nowrap">
                           {(() => {
                             const date = new Date(scan.created_at);
                             return (
-                              <div className="flex flex-col">
+                              <div className="flex flex-col leading-tight">
                                 <span>{date.toLocaleDateString(locale)}</span>
                                 <span className="text-xs text-slate-500">
                                   {date.toLocaleTimeString(locale, { timeStyle: 'short' })}
@@ -469,7 +507,7 @@ export default function FreeScansAdminPage() {
                             );
                           })()}
                         </td>
-                        <td className="px-4 py-3 max-w-[220px] whitespace-normal break-words">
+                        <td className="px-3 py-2.5 whitespace-normal break-words text-slate-700">
                           <p className="font-semibold text-slate-900">
                             {normalizeDisplayUrl(scan.url)}
                           </p>
@@ -477,11 +515,13 @@ export default function FreeScansAdminPage() {
                             <p className="text-xs text-slate-500">{scan.analyzer_domain}</p>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-slate-700 w-48 max-w-[12rem] truncate">
+                        <td className="px-3 py-2.5 text-slate-700 truncate">
                           {scan.email || '—'}
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs text-slate-700">{scan.ip_address || '—'}</td>
-                        <td className="px-4 py-3 text-xs text-slate-600">
+                        <td className="px-3 py-2.5 font-mono text-xs text-slate-700 truncate">
+                          {scan.ip_address || '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-slate-600 truncate">
                           {(() => {
                             const trimmedIp = (scan.ip_address || '').trim();
                             if (!trimmedIp) {
@@ -500,39 +540,52 @@ export default function FreeScansAdminPage() {
                             return location || localize('Inconnue', 'Unknown');
                           })()}
                         </td>
-                        <td className="px-4 py-3 text-slate-700">
+                        <td className="px-3 py-2.5 text-slate-700 truncate">
                           {scan.cms_label ? scan.cms_label : localize('Inconnu', 'Unknown')}
                         </td>
-                        <td className="px-4 py-3">{renderRiskBadge(scan.risk_level)}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2.5 pr-6">{renderRiskBadge(scan.risk_level)}</td>
+                        <td className="px-3 py-2.5 pr-8 text-center">
                           {(() => {
                             const reportId = scan.mongo_report_id || scan.scan_id;
                             if (!reportId) {
-                              return localize('Indisponible', 'Unavailable');
+                              return (
+                                <span className="text-xs text-slate-400">-</span>
+                              );
                             }
+                            const label = localize('Télécharger le rapport', 'Download report');
                             return (
-                              <Button asChild size="sm" variant="outline">
-                                <a
-                                  href={`/service/generate-report/${reportId}?report_format=pdf`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  <Download className="w-4 h-4 mr-1" />
-                                  {localize('Télécharger', 'Download')}
-                                </a>
-                              </Button>
+                              <a
+                                href={`/service/generate-report/${reportId}?report_format=pdf`}
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label={label}
+                                title={label}
+                                className="inline-flex items-center justify-center text-slate-600 hover:text-slate-900"
+                              >
+                                <Download className="w-4 h-4" />
+                              </a>
                             );
                           })()}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-500">
+                        <td className="px-3 py-2.5 pl-8 text-xs text-slate-500">
                           {scan.severity_counts ? (
-                            <div className="flex flex-wrap gap-2">
-                              {Object.entries(scan.severity_counts).map(([severity, value]) => (
-                                <span key={severity} className="inline-flex gap-1">
-                                  <strong>{severity.toUpperCase()}:</strong>
-                                  <span>{value}</span>
-                                </span>
-                              ))}
+                            <div className="flex flex-col gap-1">
+                              <div className="flex gap-3">
+                                {(['critical', 'high'] as const).map((severity) => (
+                                  <span key={severity} className="inline-flex gap-1">
+                                    <strong>{severityLetter(severity)}:</strong>
+                                    <span>{scan.severity_counts?.[severity] ?? 0}</span>
+                                  </span>
+                                ))}
+                              </div>
+                              <div className="flex gap-3">
+                                {(['medium', 'low'] as const).map((severity) => (
+                                  <span key={severity} className="inline-flex gap-1">
+                                    <strong>{severityLetter(severity)}:</strong>
+                                    <span>{scan.severity_counts?.[severity] ?? 0}</span>
+                                  </span>
+                                ))}
+                              </div>
                             </div>
                           ) : (
                             localize('Non renseigné', 'Not provided')

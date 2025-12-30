@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Download, RefreshCw } from 'lucide-react';
 
@@ -67,7 +68,6 @@ const isPrivateOrLocalIp = (ip: string): boolean => {
     trimmed.startsWith('::ffff:172.')
   );
 };
-
 export default function AdminLogsPage() {
   const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -84,6 +84,16 @@ export default function AdminLogsPage() {
   const [totalScanLogs, setTotalScanLogs] = useState<number | null>(null);
   const [ipLocations, setIpLocations] = useState<Record<string, string | null>>({});
   const [ipLocationServiceDown, setIpLocationServiceDown] = useState(false);
+
+  const renderModeBadge = (mode: string) => {
+    const normalized = (mode || '').toLowerCase();
+    const label = normalized ? normalized.toUpperCase() : '—';
+    const color = {
+      complete: 'bg-blue-100 text-blue-700',
+      light: 'bg-slate-100 text-slate-700',
+    }[normalized];
+    return <Badge className={color ?? 'bg-slate-100 text-slate-600'}>{label}</Badge>;
+  };
 
   useEffect(() => {
     if (!authLoading) {
@@ -338,21 +348,31 @@ export default function AdminLogsPage() {
               {loading && <span>{localize('Mise à jour...', 'Refreshing...')}</span>}
             </div>
           </CardHeader>
-          <CardContent className="overflow-x-auto">
+          <CardContent className="p-0">
             {logs.length === 0 ? (
-              <p className="text-sm text-slate-500">{localize('Aucun log disponible.', 'No log available.')}</p>
+              <p className="text-sm text-slate-500 p-6">{localize('Aucun log disponible.', 'No log available.')}</p>
             ) : (
-              <Table className="border-separate border-spacing-0">
+              <Table className="border-separate border-spacing-0 table-fixed">
+                <colgroup>
+                  <col className="w-[12%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[6%]" />
+                </colgroup>
                 <TableHeader className="bg-gradient-to-r from-slate-50 via-white to-slate-50 sticky top-0 z-10 shadow-sm">
                   <TableRow>
-                    <TableHead>{localize('Date', 'Date')}</TableHead>
-                    <TableHead>{localize('Utilisateur', 'User')}</TableHead>
-                    <TableHead>{localize('URL', 'URL')}</TableHead>
-                    <TableHead>{localize('Mode', 'Mode')}</TableHead>
-                    <TableHead>{localize('IP', 'IP')}</TableHead>
-                    <TableHead>{localize('Localisation', 'Location')}</TableHead>
-                    <TableHead>{localize('Scan ID', 'Scan ID')}</TableHead>
-                    <TableHead>{localize('Rapport', 'Report')}</TableHead>
+                    <TableHead className="px-3 py-3 text-xs font-semibold text-slate-600">{localize('Date', 'Date')}</TableHead>
+                    <TableHead className="px-3 py-3 text-xs font-semibold text-slate-600">{localize('Utilisateur', 'User')}</TableHead>
+                    <TableHead className="px-3 py-3 text-xs font-semibold text-slate-600">{localize('URL', 'URL')}</TableHead>
+                    <TableHead className="px-3 py-3 text-xs font-semibold text-slate-600">{localize('Mode', 'Mode')}</TableHead>
+                    <TableHead className="px-3 py-3 text-xs font-semibold text-slate-600">{localize('IP', 'IP')}</TableHead>
+                    <TableHead className="px-3 py-3 text-xs font-semibold text-slate-600">{localize('Localisation', 'Location')}</TableHead>
+                    <TableHead className="px-3 py-3 text-xs font-semibold text-slate-600">{localize('Scan ID', 'Scan ID')}</TableHead>
+                    <TableHead className="px-3 py-3 text-xs font-semibold text-slate-600 text-center">{localize('Rapport', 'Report')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -361,31 +381,44 @@ export default function AdminLogsPage() {
                       key={`${log.scan_id}-${log.triggered_at}-${log.user_id}`}
                       className="border-b border-slate-100 odd:bg-white even:bg-slate-50/40 hover:bg-slate-100/60 transition-colors"
                     >
-                      <TableCell className="whitespace-nowrap tabular-nums text-slate-600">
-                        {new Date(log.triggered_at).toLocaleString(locale, {
-                          dateStyle: 'short',
-                          timeStyle: 'medium',
-                        })}
+                      <TableCell className="px-3 py-3 whitespace-nowrap tabular-nums text-slate-600">
+                        {(() => {
+                          const date = new Date(log.triggered_at);
+                          return (
+                            <div className="flex flex-col leading-tight">
+                              <span>{date.toLocaleDateString(locale)}</span>
+                              <span className="text-xs text-slate-500">
+                                {date.toLocaleTimeString(locale, { timeStyle: 'short' })}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </TableCell>
-                      <TableCell className="text-sm">
+                      <TableCell className="px-3 py-3 text-sm">
                         <div className="font-medium">
                           {log.user_name || localize('Nom inconnu', 'Unknown name')}
                         </div>
                         <div className="text-[11px] text-slate-500 font-mono">{log.user_id}</div>
                       </TableCell>
-                      <TableCell className="text-blue-600 underline break-words max-w-[280px]">
+                      <TableCell className="px-3 py-3 text-slate-700 truncate">
                         {(() => {
                           const displayUrl = normalizeDisplayUrl(log.target_url);
                           return (
-                            <a href={displayUrl} target="_blank" rel="noreferrer">
+                            <a
+                              href={displayUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={displayUrl}
+                              className="text-blue-600 hover:text-blue-700 hover:underline underline-offset-4"
+                            >
                               {displayUrl}
                             </a>
                           );
                         })()}
                       </TableCell>
-                      <TableCell className="uppercase text-xs tracking-wide text-slate-700">{log.scan_mode}</TableCell>
-                      <TableCell className="font-mono text-xs text-slate-700">{log.ip_address || '—'}</TableCell>
-                      <TableCell className="text-sm">
+                      <TableCell className="px-3 py-3">{renderModeBadge(log.scan_mode)}</TableCell>
+                      <TableCell className="px-3 py-3 font-mono text-xs text-slate-700 truncate">{log.ip_address || '—'}</TableCell>
+                      <TableCell className="px-3 py-3 text-xs text-slate-600 truncate">
                         {(() => {
                           const trimmedIp = (log.ip_address || '').trim();
                           if (!trimmedIp) {
@@ -404,19 +437,21 @@ export default function AdminLogsPage() {
                           return location || localize('Inconnue', 'Unknown');
                         })()}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">{log.scan_id || '—'}</TableCell>
-                      <TableCell>
+                      <TableCell className="px-3 py-3 font-mono text-xs text-slate-600 truncate" title={log.scan_id || '—'}>
+                        {log.scan_id || '—'}
+                      </TableCell>
+                      <TableCell className="px-3 py-3 text-center">
                         {log.scan_id ? (
-                          <Button asChild size="sm" variant="outline">
-                            <a
-                              href={`/service/generate-report/${log.scan_id}?report_format=pdf`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <Download className="w-4 h-4 mr-1" />
-                              {localize('Télécharger', 'Download')}
-                            </a>
-                          </Button>
+                          <a
+                            href={`/service/generate-report/${log.scan_id}?report_format=pdf`}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={localize('Télécharger le rapport', 'Download report')}
+                            title={localize('Télécharger le rapport', 'Download report')}
+                            className="inline-flex items-center justify-center text-slate-600 hover:text-slate-900"
+                          >
+                            <Download className="w-4 h-4" />
+                          </a>
                         ) : (
                           '—'
                         )}
