@@ -26,6 +26,8 @@ type ScanApiResult = {
   scan_time?: number;
   scan_id?: string | null;
   mongo_id?: string | null;
+  mongo_report_id?: string | null;
+  _id?: string | null;
   cms_scan?: { cves?: Array<{ severity?: string | null }> } | null;
   nuclei_scan?: { parsed_results?: Array<{ severity?: string | null }> } | null;
   zap_scan?: { alerts?: Array<{ risk?: string | null; severity?: string | null }> } | null;
@@ -236,6 +238,57 @@ export function QuickScanCard() {
   const duplicateEmailMessage =
     'This email already used the free scan. Please sign in or sign up to continue.';
 
+  const fetchScanReport = async (scanId: string): Promise<ScanApiResult | null> => {
+    const response = await fetch(`/service/scan-report/${encodeURIComponent(scanId)}`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      const raw = await response.text();
+      let message = localize(
+        "Impossible de récupérer le rapport du scan.",
+        'Unable to fetch the scan report.'
+      );
+      try {
+        const parsed = raw ? JSON.parse(raw) : null;
+        message = parsed?.detail || parsed?.message || parsed?.error || message;
+      } catch {
+        if (raw && !/<html|<!doctype/i.test(raw)) {
+          message = raw;
+        }
+      }
+      throw new Error(message);
+    }
+
+    return (await response.json()) as ScanApiResult;
+  };
+
+  const pollScanReport = async (scanId: string): Promise<ScanApiResult> => {
+    const timeoutMs = 120000;
+    const intervalMs = 3000;
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const report = await fetchScanReport(scanId);
+      if (report) {
+        return report;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    throw new Error(
+      localize(
+        "Le scan prend trop de temps. Merci de réessayer dans quelques instants.",
+        'The scan is taking too long. Please try again in a moment.'
+      )
+    );
+  };
+
   const logFreeScan = async (payload: {
     id?: string | null;
     url?: string;
@@ -360,14 +413,21 @@ export function QuickScanCard() {
       if (analyzerData) {
         setAnalyzerDetails(analyzerData);
       }
-      const scanRaw = data?.results?.[0];
+      let queuedScanId: string | null =
+        (Array.isArray(data?.scan_ids) && data.scan_ids[0]) ||
+        data?.scan_id ||
+        null;
+      let scanRaw = data?.results?.[0] as ScanApiResult | undefined;
 
       if (!scanRaw) {
-        throw new Error(localize("Impossible d'obtenir les résultats du scan.", 'Scan results are unavailable.'));
+        if (!queuedScanId) {
+          throw new Error(localize("Impossible d'obtenir les résultats du scan.", 'Scan results are unavailable.'));
+        }
+        scanRaw = await pollScanReport(queuedScanId);
       }
 
-      const scanId = (scanRaw as ScanApiResult)?.scan_id ?? null;
-      const mongoId = (scanRaw as ScanApiResult)?.mongo_id ?? null;
+      const scanId = scanRaw.scan_id ?? queuedScanId ?? null;
+      const mongoId = scanRaw.mongo_id ?? scanRaw.mongo_report_id ?? scanRaw._id ?? null;
       setReportScanId(scanId);
       setReportMongoId(mongoId);
       const computed = computeRiskFromResult(scanRaw as ScanApiResult);
