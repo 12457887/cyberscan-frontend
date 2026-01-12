@@ -376,7 +376,15 @@ const getRiskBadge = (risk: string | null) => {
 
 type ReportFormat = 'pdf' | 'json' | 'xlsx';
 
+const canDownloadReport = (scan: Scan) => (
+  scan.status === 'completed' && !!scan.completed_at && !!scan.mongo_report_id
+);
+
 const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') => {
+  if (scan.status !== 'completed' || !scan.completed_at) {
+    alert(localize('Le scan est toujours en cours. Réessayez plus tard.', 'Scan is still running. Please try again later.'));
+    return;
+  }
   if (!scan.mongo_report_id) {
     alert(localize("Rapport non disponible. Lancez un scan d'abord.", 'Report unavailable. Please run a scan first.'));
     return;
@@ -624,7 +632,7 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
                       </TableCell>
                       <TableCell>{getRiskBadge(scan.risk_level)}</TableCell>
                       <TableCell>
-                        {scan.status === 'completed' && scan.mongo_report_id ? (
+                        {canDownloadReport(scan) ? (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="outline" size="sm">

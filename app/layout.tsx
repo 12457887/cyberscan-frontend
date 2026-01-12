@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import './globals.css';
 import { Inter } from 'next/font/google';
@@ -6,6 +7,40 @@ import { Providers } from './providers';
 
 const inter = Inter({ subsets: ['latin'] });
 const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || '';
+
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+const metadataBase = siteUrl ? new URL(siteUrl) : undefined;
+
+const defaultTitle = 'CyberScan | Website Security Scanner';
+const defaultDescription = 'AI-powered security scans for CMS websites. Detect vulnerabilities, monitor risks, and generate reports.';
+
+export const metadata: Metadata = {
+  title: {
+    default: defaultTitle,
+    template: '%s | CyberScan',
+  },
+  description: defaultDescription,
+  metadataBase,
+  openGraph: {
+    type: 'website',
+    title: defaultTitle,
+    description: defaultDescription,
+    siteName: 'CyberScan',
+    images: [
+      {
+        url: '/dark_logo.png',
+        width: 512,
+        height: 512,
+        alt: 'CyberScan',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary',
+    title: defaultTitle,
+    description: defaultDescription,
+  },
+};
 
 export default function RootLayout({
   children,
