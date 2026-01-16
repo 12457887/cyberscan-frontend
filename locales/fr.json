@@ -47,6 +47,7 @@
     "manageSubscriptions": "Gérer les abonnements",
     "freeScans": "Scans gratuits",
     "scanLogs": "Logs de scans",
+    "apiUsage": "Usage API",
     "refundRequests": "Demandes de remboursement",
     "logout": "Se déconnecter"
   },

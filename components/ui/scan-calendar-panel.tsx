@@ -2,6 +2,7 @@ import { Calendar } from './calendar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card';
 import { ScheduleScanDialog } from './schedule-scan-dialog';
 import { ScheduledScan } from '@/lib/supabase';
+import { formatDateDMY } from '@/lib/date';
 
 interface ScanCalendarProps {
   scheduledScans: ScheduledScan[];
@@ -31,7 +32,7 @@ export function ScanCalendarPanel({ scheduledScans, onScanScheduled }: ScanCalen
                   <span className="text-slate-700">{scan.site_name || scan.site_url}</span>
                 </div>
                 <span className="text-slate-500">
-                  {new Date(scan.next_scan_date).toLocaleDateString('fr-FR')}
+                  {formatDateDMY(scan.next_scan_date)}
                 </span>
               </div>
             ))}

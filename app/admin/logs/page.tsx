@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { formatDateDMY } from '@/lib/date';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -386,7 +387,7 @@ export default function AdminLogsPage() {
                           const date = new Date(log.triggered_at);
                           return (
                             <div className="flex flex-col leading-tight">
-                              <span>{date.toLocaleDateString(locale)}</span>
+                              <span>{formatDateDMY(date)}</span>
                               <span className="text-xs text-slate-500">
                                 {date.toLocaleTimeString(locale, { timeStyle: 'short' })}
                               </span>

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { formatDateDMY } from '@/lib/date';
 
 const sections = [
   {
@@ -113,7 +114,7 @@ export default function TermsPage() {
         <header className="space-y-3">
           <p className="text-sm uppercase tracking-widest text-blue-400">CyberScan</p>
           <h1 className="text-3xl md:text-4xl font-semibold text-white">Terms of Use</h1>
-          <p className="text-sm text-slate-400">Last updated: {new Date().toLocaleDateString('en-US')}</p>
+          <p className="text-sm text-slate-400">Last updated: {formatDateDMY(new Date())}</p>
         </header>
 
         <section className="space-y-8">

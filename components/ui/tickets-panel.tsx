@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './car
 import { TicketDialog } from './ticket-dialog';
 import { Ticket, supabase } from '@/lib/supabase';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatDateDMY } from '@/lib/date';
 import { Textarea } from './textarea';
 import { Button } from './button';
 
@@ -36,6 +37,12 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
       }),
     [choose]
   );
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return `${formatDateDMY(date)} ${date.toLocaleTimeString(locale, { timeStyle: 'short' })}`;
+  };
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, { message: string; status: Ticket['status'] }>>({});
   const [replyErrors, setReplyErrors] = useState<Record<string, string | null>>({});
@@ -238,7 +245,7 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
                     )}
                     <p className="text-[11px] text-slate-400">
                       {localize('Créé le', 'Created on')}{' '}
-                      {new Date(ticket.created_at).toLocaleString(locale)}
+                      {formatDateTime(ticket.created_at)}
                     </p>
 
                     {ticket.admin_response && (
@@ -250,7 +257,7 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
                         {ticket.admin_response_at && (
                           <p className="mt-1 text-[11px] text-emerald-700/70">
                             {localize('Répondu le', 'Replied on')}{' '}
-                            {new Date(ticket.admin_response_at).toLocaleString(locale)}
+                            {formatDateTime(ticket.admin_response_at)}
                           </p>
                         )}
                       </div>
@@ -312,7 +319,7 @@ export function TicketsPanel({ tickets, onTicketCreated, isAdmin = false }: Tick
 
                 {!isExpanded && (
                   <p className="mt-2 text-[11px] text-slate-400">
-                    {new Date(ticket.created_at).toLocaleString(locale)}
+                    {formatDateTime(ticket.created_at)}
                   </p>
                 )}
               </div>

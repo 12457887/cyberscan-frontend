@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase, Subscription, Invoice, SubscriptionHistory } from '@/lib/supabase';
+import { formatDateDMY } from '@/lib/date';
 import { Check, Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PLAN_DEFINITIONS, PlanDefinition } from '@/lib/plans';
@@ -219,10 +220,7 @@ function SubscriptionPageContent() {
     return new Intl.NumberFormat(locale, { style: 'currency', currency: safeCurrency }).format(amount);
   };
   const formatDate = (isoDate?: string | null) => {
-    if (!isoDate) return '—';
-    const date = new Date(isoDate);
-    if (Number.isNaN(date.getTime())) return isoDate;
-    return date.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+    return formatDateDMY(isoDate);
   };
   const formatSubscriptionStatus = (status?: Subscription['status'] | string | null) => {
     if (!status) return localize('Non disponible', 'Not available');
@@ -1173,7 +1171,7 @@ function SubscriptionPageContent() {
                     {localize('Dernière mise à jour', 'Last update')}
                   </p>
                   <p className="mt-2 text-sm text-slate-200">
-                    {subscription.updated_at ? new Date(subscription.updated_at).toLocaleDateString(locale) : '—'}
+                    {formatDateDMY(subscription.updated_at)}
                   </p>
                 </div>
                 <div>
@@ -1495,8 +1493,8 @@ function SubscriptionPageContent() {
               </h4>
               <p className="text-sm text-slate-600">
                 {localize(
-                  "Chaque scan consomme 1 crédit, qu'il soit léger ou complet. Les crédits sont renouvelés chaque mois.",
-                  'Each scan costs 1 credit, whether light or full. Credits renew every month.'
+                  "Le scan léger coûte 1 crédit, le scan complet coûte 3 crédits. Les crédits sont renouvelés chaque mois.",
+                  'Light scans cost 1 credit, full scans cost 3 credits. Credits renew every month.'
                 )}
               </p>
             </div>

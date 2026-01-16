@@ -5,6 +5,7 @@ import { useMemo, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { formatDateDMY } from '@/lib/date';
 
 const formatCurrency = (value?: string | null) => {
   if (!value) return null;
@@ -39,11 +40,7 @@ export default function PaymentSucceededClient() {
   const nextBillingDate = useMemo(() => {
     const date = new Date();
     date.setDate(date.getDate() + (interval === 'annual' ? 365 : 30));
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
+    return formatDateDMY(date);
   }, [interval]);
 
   const [orderId, setOrderId] = useState(() => {

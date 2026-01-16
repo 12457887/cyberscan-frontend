@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Zap, Loader2 } from 'lucide-react';
+import { Zap, Loader2, ShieldCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { Progress } from '@/components/ui/progress';
@@ -24,6 +24,9 @@ const PLAN_CONCURRENCY: Record<string, number> = {
   pro: 10,
   enterprise: 10,
 };
+const LIGHT_SCAN_CREDIT_COST = 1;
+const FULL_SCAN_CREDIT_COST = 3;
+const FULL_SCAN_PLANS = new Set(['pro', 'enterprise']);
 
 const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
 const FINISHED_STATUSES = new Set(['completed', 'failed']);
@@ -87,6 +90,7 @@ export default function ScanPage() {
   const [error, setError] = useState('');
   const [scanProgress, setScanProgress] = useState(0);
   const [planType, setPlanType] = useState<string>('free');
+  const canUseFullScan = FULL_SCAN_PLANS.has(planType);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleFrequency, setScheduleFrequency] = useState<'none' | 'weekly' | 'monthly'>('none');
   const [scheduleStartAt, setScheduleStartAt] = useState('');
@@ -172,6 +176,12 @@ export default function ScanPage() {
     }
   }, [planType]);
 
+  useEffect(() => {
+    if (scanType === 'complete' && !canUseFullScan) {
+      setScanType('light');
+    }
+  }, [canUseFullScan, scanType]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -183,9 +193,12 @@ export default function ScanPage() {
     try {
       const concurrencyLimit = PLAN_CONCURRENCY[planType] ?? 1;
 
-      if (planType === 'free' && scanType === 'complete') {
+      if (scanType === 'complete' && !canUseFullScan) {
         setError(
-          localize('Le plan Gratuit ne permet pas les scans complets.', 'The Free plan does not allow full scans.')
+          localize(
+            'Le scan complet est disponible pour les plans Pro et Premium.',
+            'Full scans are available on Pro and Premium plans.'
+          )
         );
         setLoading(false);
         stopProgress(false);
@@ -270,6 +283,8 @@ export default function ScanPage() {
         }
       }
 
+      const perScanCost = scanType === 'complete' ? FULL_SCAN_CREDIT_COST : LIGHT_SCAN_CREDIT_COST;
+      const totalCost = normalizedUrls.length * perScanCost;
       let creditsData = { remaining_credits: 0, used_credits: 0, total_credits: 0 };
 
       if (!DISABLE_CREDIT_CHECK) {
@@ -287,14 +302,19 @@ export default function ScanPage() {
             }
           : { remaining_credits: 0, used_credits: 0, total_credits: 0 };
 
-        if (!creditsData || (creditsData.remaining_credits || 0) < normalizedUrls.length) {
-          setError(localize('Crédits insuffisants pour lancer cette série de scans.', 'Not enough credits to launch this batch of scans.'));
+        if (!creditsData || (creditsData.remaining_credits || 0) < totalCost) {
+          setError(
+            localize(
+              `Crédits insuffisants pour lancer cette série de scans. ${totalCost} crédits requis.`,
+              `Not enough credits to launch this batch of scans. ${totalCost} credits required.`
+            )
+          );
           setLoading(false);
           stopProgress(false);
           return;
         }
 
-        const newUsed = (creditsData.used_credits ?? 0) + normalizedUrls.length;
+        const newUsed = (creditsData.used_credits ?? 0) + totalCost;
         const { error: reserveError } = await supabase
           .from('credits')
           .update({
@@ -532,6 +552,36 @@ export default function ScanPage() {
                       </p>
                       <p className="text-xs text-slate-500 mt-1">
                         {localize('Durée: ~5 minutes | Coût: 1 crédit', 'Duration: ~5 minutes | Cost: 1 credit')}
+                      </p>
+                    </div>
+                  </div>
+                  <div
+                    className={`flex items-start space-x-3 p-4 border rounded-lg ${
+                      canUseFullScan ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-60 cursor-not-allowed'
+                    }`}
+                  >
+                    <RadioGroupItem value="complete" id="complete" className="mt-1" disabled={!canUseFullScan} />
+                    <div className="flex-1">
+                      <Label
+                        htmlFor="complete"
+                        className={`flex items-center ${canUseFullScan ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                      >
+                        <ShieldCheck className="w-4 h-4 mr-2 text-emerald-600" />
+                        <span className="font-medium">{localize('Scan Complet', 'Full scan')}</span>
+                        {!canUseFullScan && (
+                          <span className="ml-2 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">
+                            {localize('Pro/Premium', 'Pro/Premium')}
+                          </span>
+                        )}
+                      </Label>
+                      <p className="text-sm text-slate-600 mt-1">
+                        {localize(
+                          'Analyse approfondie avec tests actifs et couverture élargie.',
+                          'In-depth analysis with active tests and extended coverage.'
+                        )}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">
+                      {localize('Durée: ~20 minutes | Coût: 3 crédits', 'Duration: ~20 minutes | Cost: 3 credits')}
                       </p>
                     </div>
                   </div>

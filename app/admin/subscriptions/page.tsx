@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase, Subscription, Invoice } from '@/lib/supabase';
+import { formatDateDMY } from '@/lib/date';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, RefreshCcw, FileText } from 'lucide-react';
@@ -33,7 +34,6 @@ export default function AdminSubscriptionsPage() {
   const router = useRouter();
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
-  const locale = choose({ fr: 'fr-FR', en: 'en-US' });
 
   const [subscriptions, setSubscriptions] = useState<ManagedSubscription[]>([]);
   const [loading, setLoading] = useState(true);
@@ -141,12 +141,8 @@ export default function AdminSubscriptionsPage() {
     }
   };
 
-  const formatDate = (value?: string | null) => {
-    if (!value) return localize('Non défini', 'Not set');
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return localize('Non défini', 'Not set');
-    return date.toLocaleString(locale);
-  };
+  const formatDate = (value?: string | null) =>
+    formatDateDMY(value, localize('Non défini', 'Not set'));
 
   const invoiceLink = (row: ManagedSubscription) => {
     return row.invoice_pdf_url || row.hosted_invoice_url || null;

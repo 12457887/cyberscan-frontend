@@ -4,6 +4,7 @@ import type { RefundRequest } from '@/lib/supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './card';
 import { Badge } from './badge';
 import { Button } from './button';
+import { formatDateDMY } from '@/lib/date';
 import { Loader2 } from 'lucide-react';
 
 const statusStyles: Record<RefundRequest['status'], string> = {
@@ -22,6 +23,13 @@ type RefundRequestsPanelProps = {
 };
 
 export function RefundRequestsPanel({ requests, loading, error, onDecision, actionRequestId }: RefundRequestsPanelProps) {
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return `${formatDateDMY(date)} ${date.toLocaleTimeString('fr-FR', { timeStyle: 'short' })}`;
+  };
+
   const handleDecision = async (request: RefundRequest, decision: 'approve' | 'reject') => {
     if (decision === 'approve') {
       const confirmed = window.confirm('Approve this refund request?');
@@ -69,7 +77,7 @@ export function RefundRequestsPanel({ requests, loading, error, onDecision, acti
                         </Badge>
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        Requested on {new Date(request.created_at).toLocaleString()}
+                        Requested on {formatDateTime(request.created_at)}
                       </p>
                       {request.reason && (
                         <p className="text-sm text-slate-600 mt-2">Reason: {request.reason}</p>

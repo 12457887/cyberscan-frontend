@@ -5,6 +5,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase, Credits, Scan, Alert, Ticket, RefundRequest } from '@/lib/supabase';
+import { formatDateDMY } from '@/lib/date';
 import { TicketsPanel } from '@/components/ui/tickets-panel';
 import { RefundRequestsPanel } from '@/components/ui/refund-requests-panel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -100,6 +101,12 @@ export default function DashboardPageClient() {
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const locale = choose({ fr: 'fr-FR', en: 'en-US' });
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return `${formatDateDMY(date)} ${date.toLocaleTimeString(locale, { timeStyle: 'short' })}`;
+  };
   const statusLabels = useMemo(
     () =>
       choose({
@@ -1062,7 +1069,7 @@ export default function DashboardPageClient() {
                             {scanModeLabels[scan.scan_type]}
                           </TableCell>
                           <TableCell>{getRiskBadge(scan.risk_level)}</TableCell>
-                          <TableCell>{new Date(scan.created_at).toLocaleString(locale)}</TableCell>
+                          <TableCell>{formatDateTime(scan.created_at)}</TableCell>
                           <TableCell className="text-right">{getStatusBadge(scan.status)}</TableCell>
                         </TableRow>
                       );
@@ -1100,7 +1107,7 @@ export default function DashboardPageClient() {
                         </span>
                       </div>
                       <p className="mt-2 text-[11px] text-slate-400">
-                        {new Date(alert.created_at).toLocaleString(locale)}
+                        {formatDateTime(alert.created_at)}
                       </p>
                     </div>
                   );

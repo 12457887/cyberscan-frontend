@@ -6,6 +6,7 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   Shield,
   Home,
+  BarChart3,
   Scan,
   FileText,
   CreditCard,
@@ -43,6 +44,7 @@ const ADMIN_NAV_ITEMS = [
   { key: 'nav.manageSubscriptions', href: '/admin/subscriptions', icon: Layers },
   { key: 'nav.freeScans', href: '/admin/free-scans', icon: Inbox },
   { key: 'nav.scanLogs', href: '/admin/logs', icon: ScrollText },
+  { key: 'nav.apiUsage', href: '/admin/api-usage-statistics', icon: BarChart3 },
   { key: 'nav.refundRequests', href: '/admin/refunds', icon: CreditCard },
 ] as const;
 

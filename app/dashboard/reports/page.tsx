@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase, Scan, Vulnerability } from '@/lib/supabase';
+import { formatDateDMY } from '@/lib/date';
 import { Download, Filter, Loader2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
@@ -27,6 +28,8 @@ import {
 } from '@/components/ui/select';
 
 const DISABLE_CREDIT_CHECK = process.env.NEXT_PUBLIC_DISABLE_CREDITS === 'true';
+const LIGHT_SCAN_CREDIT_COST = 1;
+const FULL_SCAN_CREDIT_COST = 3;
 const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
 const FINISHED_STATUSES = new Set(['completed', 'failed']);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -62,11 +65,20 @@ async function waitForScanCompletion(scanIds: Array<string | number>, maxAttempt
   return 0;
 }
 
+const getScanCreditCost = (scanType?: string | null) =>
+  scanType === 'complete' ? FULL_SCAN_CREDIT_COST : LIGHT_SCAN_CREDIT_COST;
+
 export default function ReportsPage() {
   const { user, refreshCredits } = useAuth();
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const locale = choose({ fr: 'fr-FR', en: 'en-US' });
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return `${formatDateDMY(date)} ${date.toLocaleTimeString(locale, { timeStyle: 'short' })}`;
+  };
   const statusLabels = useMemo(
     () =>
       choose({
@@ -152,7 +164,7 @@ export default function ReportsPage() {
     }
   };
 
-  const ensureRescanCredit = async () => {
+  const ensureRescanCredit = async (requiredCredits: number) => {
     if (DISABLE_CREDIT_CHECK || !user?.id) {
       return { total: 0, used: 0 };
     }
@@ -174,9 +186,12 @@ export default function ReportsPage() {
       const total = data?.total_credits ?? 0;
       const used = data?.used_credits ?? 0;
       const remaining = total - used;
-      if (remaining < 1) {
+      if (remaining < requiredCredits) {
         setRescanError(
-          localize('Crédits insuffisants pour relancer ce scan.', 'Not enough credits to relaunch this scan.')
+          localize(
+            `Crédits insuffisants pour relancer ce scan. ${requiredCredits} crédits requis.`,
+            `Not enough credits to relaunch this scan. ${requiredCredits} credits required.`
+          )
         );
         return null;
       }
@@ -212,12 +227,15 @@ export default function ReportsPage() {
     setRescanMessage(null);
     setRescanLoadingId(scan.id);
 
-    const creditSnapshot = await ensureRescanCredit();
+    const scanMode = (scan.scan_type || 'light') as 'light' | 'complete';
+    const creditCost = getScanCreditCost(scanMode);
+
+    const creditSnapshot = await ensureRescanCredit(creditCost);
     if (!creditSnapshot) {
       setRescanLoadingId(null);
       return;
     }
-    const newUsed = (creditSnapshot.used ?? 0) + 1;
+    const newUsed = (creditSnapshot.used ?? 0) + creditCost;
     try {
       const { error: reserveError } = await supabase
         .from('credits')
@@ -261,7 +279,6 @@ export default function ReportsPage() {
         return scan.site_name || normalizedUrl;
       }
     })();
-    const scanMode = (scan.scan_type || 'light') as 'light' | 'complete';
 
     try {
       const { data: inserted, error: insertError } = await supabase
@@ -626,7 +643,7 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
                       </TableCell>
                       <TableCell className="capitalize">{scan.cms_type || localize('Inconnu', 'Unknown')}</TableCell>
                       <TableCell>{getStatusBadge(scan.status)}</TableCell>
-                      <TableCell>{new Date(scan.created_at).toLocaleString(locale)}</TableCell>
+                      <TableCell>{formatDateTime(scan.created_at)}</TableCell>
                       <TableCell className="text-center font-semibold">
                         {getVulnerabilityTotal(scan)}
                       </TableCell>

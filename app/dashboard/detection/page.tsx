@@ -7,6 +7,7 @@ import { useSubscriptionPlan } from '@/hooks/use-subscription-plan';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { formatDateDMY } from '@/lib/date';
 import {
   Card,
   CardContent,
@@ -278,14 +279,11 @@ export default function DashboardDetectionPage() {
     return `${Math.round(percentage)}%`;
   };
 
-  const formatDateTime = (value: string) =>
-    new Date(value).toLocaleString(locale, {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  const formatDateTime = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return `${formatDateDMY(date)} ${date.toLocaleTimeString(locale, { timeStyle: 'short' })}`;
+  };
 
   const successfulCount = results?.filter((r) => r.status === 'success').length ?? 0;
   const failureCount = results?.filter((r) => r.status === 'error').length ?? 0;

@@ -8,6 +8,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
+import { formatDateDMY } from '@/lib/date';
 import {
   Users,
   Activity,
@@ -48,6 +49,12 @@ export default function AdminDashboard() {
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const locale = choose({ fr: 'fr-FR', en: 'en-US' });
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return `${formatDateDMY(date)} ${date.toLocaleTimeString(locale, { timeStyle: 'short' })}`;
+  };
   const statusLabels = useMemo(
     () =>
       choose({
@@ -74,7 +81,6 @@ export default function AdminDashboard() {
   const [creditAmount, setCreditAmount] = useState('10');
   const [creditFeedback, setCreditFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [creditLoading, setCreditLoading] = useState(false);
-
   // 🔐 Vérification du rôle admin
   useEffect(() => {
     if (!authLoading) {
@@ -456,7 +462,9 @@ const handleDeleteUser = async (userId: string) => {
                   <div key={message.id} className="border border-slate-200 rounded-lg p-3 shadow-sm">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between text-xs text-slate-500">
                       <span>{message.full_name || message.email}</span>
-                      <span>{new Date(message.created_at).toLocaleString(locale)}</span>
+                      <span>
+                        {formatDateTime(message.created_at)}
+                      </span>
                     </div>
                     <p className="text-sm text-slate-900 mt-2 whitespace-pre-line">{message.message}</p>
                     <p className="text-xs text-slate-500 mt-1">{message.email}</p>
@@ -504,7 +512,7 @@ const handleDeleteUser = async (userId: string) => {
                         <td className="p-2 capitalize">{u.plan_type || '—'}</td>
                         <td className="p-2">
                           {u.expires_at
-                            ? new Date(u.expires_at).toLocaleDateString(locale)
+                            ? formatDateDMY(u.expires_at)
                             : '—'}
                         </td>
                         <td className="p-2 flex gap-2">

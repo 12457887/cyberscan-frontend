@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase, Alert } from '@/lib/supabase';
+import { formatDateDMY } from '@/lib/date';
 import { Bell, Info, AlertTriangle, XCircle, Trash2 } from 'lucide-react';
 
 export default function NotificationsPage() {
@@ -15,6 +16,12 @@ export default function NotificationsPage() {
   const { choose, language } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const locale = choose({ fr: 'fr-FR', en: 'en-US' });
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return `${formatDateDMY(date)} ${date.toLocaleTimeString(locale, { timeStyle: 'short' })}`;
+  };
   const severityLabels = choose({
     fr: { error: 'Erreur', warning: 'Attention', info: 'Info', new: 'Nouveau' },
     en: { error: 'Error', warning: 'Warning', info: 'Info', new: 'New' },
@@ -219,7 +226,7 @@ export default function NotificationsPage() {
                             </div>
                             <p className="text-sm text-slate-600 mb-2">{translated.message}</p>
                             <p className="text-xs text-slate-500">
-                              {new Date(alert.created_at).toLocaleString(locale)}
+                              {formatDateTime(alert.created_at)}
                             </p>
                           </div>
                         </div>

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { formatDateDMY } from '@/lib/date';
 import Link from 'next/link';
 import { Download, Loader2, RefreshCcw } from 'lucide-react';
 
@@ -499,7 +500,7 @@ export default function FreeScansAdminPage() {
                             const date = new Date(scan.created_at);
                             return (
                               <div className="flex flex-col leading-tight">
-                                <span>{date.toLocaleDateString(locale)}</span>
+                                <span>{formatDateDMY(date)}</span>
                                 <span className="text-xs text-slate-500">
                                   {date.toLocaleTimeString(locale, { timeStyle: 'short' })}
                                 </span>
