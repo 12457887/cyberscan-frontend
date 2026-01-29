@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase, Scan, Vulnerability } from '@/lib/supabase';
 import { formatDateDMY } from '@/lib/date';
-import { Download, Filter, Loader2 } from 'lucide-react';
+import { CheckCircle2, Download, Filter, Loader2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   DropdownMenu,
@@ -32,6 +32,7 @@ const LIGHT_SCAN_CREDIT_COST = 1;
 const FULL_SCAN_CREDIT_COST = 3;
 const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
 const FINISHED_STATUSES = new Set(['completed', 'failed']);
+const PENDING_FULL_SCAN_KEY = 'pending_full_scan_ids';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitForScanCompletion(scanIds: Array<string | number>, maxAttempts = 60, intervalMs = 5000) {
@@ -109,14 +110,37 @@ export default function ReportsPage() {
   const [rescanLoadingId, setRescanLoadingId] = useState<string | null>(null);
   const [rescanMessage, setRescanMessage] = useState<string | null>(null);
   const [rescanError, setRescanError] = useState<string | null>(null);
+  const [pendingFullScanIds, setPendingFullScanIds] = useState<string[]>([]);
+  const [readyFullScanIds, setReadyFullScanIds] = useState<string[]>([]);
+
+  const updatePendingFullScanIds = (ids: string[]) => {
+    setPendingFullScanIds(ids);
+    if (typeof window === 'undefined') return;
+    if (ids.length) {
+      window.sessionStorage.setItem(PENDING_FULL_SCAN_KEY, JSON.stringify(ids));
+    } else {
+      window.sessionStorage.removeItem(PENDING_FULL_SCAN_KEY);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = window.sessionStorage.getItem(PENDING_FULL_SCAN_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        updatePendingFullScanIds(parsed.filter(Boolean));
+      }
+    } catch (storageError) {
+      console.warn('Impossible de lire les scans complets en attente:', storageError);
+      window.sessionStorage.removeItem(PENDING_FULL_SCAN_KEY);
+    }
+  }, []);
 
   useEffect(() => {
     if (!user) return;
-
     loadReports();
-
-    const interval = setInterval(loadReports, 30000);
-    return () => clearInterval(interval);
   }, [user]);
 
   const loadReports = async () => {
@@ -163,6 +187,47 @@ export default function ReportsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!user) return;
+    const intervalMs = scans.some((scan) => !scan.status || ACTIVE_STATUSES.has(scan.status))
+      ? 5000
+      : 30000;
+    const interval = setInterval(loadReports, intervalMs);
+    return () => clearInterval(interval);
+  }, [user, scans]);
+
+  useEffect(() => {
+    if (!pendingFullScanIds.length) return;
+
+    const completedIds: string[] = [];
+    const failedIds: string[] = [];
+    const stillPending: string[] = [];
+
+    pendingFullScanIds.forEach((scanId) => {
+      const scan = scans.find((entry) => entry.id === scanId);
+      if (!scan) {
+        stillPending.push(scanId);
+        return;
+      }
+      if (scan.status === 'completed' && scan.mongo_report_id) {
+        completedIds.push(scanId);
+        return;
+      }
+      if (scan.status === 'failed') {
+        failedIds.push(scanId);
+        return;
+      }
+      stillPending.push(scanId);
+    });
+
+    if (completedIds.length || failedIds.length) {
+      updatePendingFullScanIds(stillPending);
+      if (completedIds.length) {
+        setReadyFullScanIds((prev) => Array.from(new Set([...prev, ...completedIds])));
+      }
+    }
+  }, [pendingFullScanIds, scans]);
 
   const ensureRescanCredit = async (requiredCredits: number) => {
     if (DISABLE_CREDIT_CHECK || !user?.id) {
@@ -354,6 +419,13 @@ export default function ReportsPage() {
         trackCreditConsumption([inserted.id]);
       }
 
+      if (scanMode === 'complete') {
+        const nextPending = Array.from(
+          new Set([...pendingFullScanIds, String(inserted.id)].filter(Boolean))
+        );
+        updatePendingFullScanIds(nextPending);
+      }
+
       setRescanMessage(
         localize('Scan relancé avec succès. Il apparaîtra dans la liste dès son démarrage.', 'Scan relaunched successfully. It will appear in the list once it starts.')
       );
@@ -430,6 +502,15 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
   }
 };
 
+const handleOpenReport = (scan: Scan) => {
+  if (scan.status !== 'completed' || !scan.mongo_report_id) {
+    alert(localize("Rapport non disponible. Lancez un scan d'abord.", 'Report unavailable. Please run a scan first.'));
+    return;
+  }
+  const url = `/api/generate-report/${scan.mongo_report_id}?report_format=pdf&display=inline`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+};
+
 
   const getVulnerabilityTotal = (scan: Scan) => {
     if (typeof scan.vulnerabilities_count === 'number') {
@@ -445,6 +526,12 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
     filters.risk !== 'all' ||
     filters.dateFrom ||
     filters.dateTo;
+
+  const activeCompleteScans = scans.filter(
+    (scan) => scan.scan_type === 'complete' && ACTIVE_STATUSES.has(scan.status)
+  );
+  const pendingFullCount = activeCompleteScans.length || pendingFullScanIds.length;
+  const readyFullScans = scans.filter((scan) => readyFullScanIds.includes(scan.id));
 
   const filteredScans = scans.filter((scan) => {
     if (filters.search) {
@@ -604,6 +691,58 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
         {rescanMessage && (
           <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
             {rescanMessage}
+          </div>
+        )}
+        {readyFullScans.length > 0 && (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="mt-0.5 h-4 w-4" />
+              <div className="space-y-2">
+                <p className="font-semibold">
+                  {readyFullScans.length > 1
+                    ? localize('Rapports complets prêts.', 'Full scan reports are ready.')
+                    : localize('Rapport complet prêt.', 'Full scan report is ready.')}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {readyFullScans.map((scan) => (
+                    <Button
+                      key={`ready-${scan.id}`}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleOpenReport(scan)}
+                    >
+                      {localize('Afficher le rapport', 'View report')}
+                      {scan.site_name ? ` • ${scan.site_name}` : ''}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {pendingFullCount > 0 && (
+          <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+            <div className="flex items-start gap-2">
+              <Loader2 className="mt-0.5 h-4 w-4 animate-spin" />
+              <div className="space-y-1">
+                <p className="font-semibold">
+                  {pendingFullCount > 1
+                    ? localize('Scans complets démarrés.', 'Full scans started.')
+                    : localize('Scan complet démarré.', 'Full scan started.')}
+                </p>
+                <p>
+                  {pendingFullCount > 1
+                    ? localize(
+                        'Les rapports seront affichés dès la fin du scan.',
+                        'Reports will be available as soon as the scans finish.'
+                      )
+                    : localize(
+                        'Le rapport sera affiché dès la fin du scan.',
+                        'The report will be available as soon as the scan finishes.'
+                      )}
+                </p>
+              </div>
+            </div>
           </div>
         )}
 

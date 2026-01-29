@@ -23,10 +23,11 @@ const PLAN_CONCURRENCY: Record<string, number> = {
   basic: 5,
   pro: 10,
   enterprise: 10,
+  admin: 10,
 };
 const LIGHT_SCAN_CREDIT_COST = 1;
 const FULL_SCAN_CREDIT_COST = 3;
-const FULL_SCAN_PLANS = new Set(['pro', 'enterprise']);
+const FULL_SCAN_PLANS = new Set(['pro', 'enterprise', 'admin']);
 
 const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
 const FINISHED_STATUSES = new Set(['completed', 'failed']);
@@ -196,8 +197,8 @@ export default function ScanPage() {
       if (scanType === 'complete' && !canUseFullScan) {
         setError(
           localize(
-            'Le scan complet est disponible pour les plans Pro et Premium.',
-            'Full scans are available on Pro and Premium plans.'
+            'Le scan complet est disponible pour les plans Pro, Enterprise et Admin.',
+            'Full scans are available on Pro, Enterprise, and Admin plans.'
           )
         );
         setLoading(false);
@@ -454,6 +455,23 @@ export default function ScanPage() {
         trackCreditConsumption(scanIds);
       }
 
+      if (scanType === 'complete') {
+        try {
+          const storageKey = 'pending_full_scan_ids';
+          const existingRaw = window.sessionStorage.getItem(storageKey);
+          const existing = existingRaw ? (JSON.parse(existingRaw) as string[]) : [];
+          const next = Array.from(
+            new Set([
+              ...existing.filter(Boolean),
+              ...scanRows.map((row) => String(row.id)).filter(Boolean),
+            ])
+          );
+          window.sessionStorage.setItem(storageKey, JSON.stringify(next));
+        } catch (storageError) {
+          console.warn('Impossible de mémoriser les scans complets en attente:', storageError);
+        }
+      }
+
       stopProgress(true);
       // ✅ Redirection vers la page des rapports
       router.push('/dashboard/reports');
@@ -570,7 +588,7 @@ export default function ScanPage() {
                         <span className="font-medium">{localize('Scan Complet', 'Full scan')}</span>
                         {!canUseFullScan && (
                           <span className="ml-2 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">
-                            {localize('Pro/Premium', 'Pro/Premium')}
+                            {localize('Pro/Enterprise/Admin', 'Pro/Enterprise/Admin')}
                           </span>
                         )}
                       </Label>
