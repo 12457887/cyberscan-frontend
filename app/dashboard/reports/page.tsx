@@ -17,6 +17,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -26,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const DISABLE_CREDIT_CHECK = process.env.NEXT_PUBLIC_DISABLE_CREDITS === 'true';
 const LIGHT_SCAN_CREDIT_COST = 1;
@@ -112,6 +114,11 @@ export default function ReportsPage() {
   const [rescanError, setRescanError] = useState<string | null>(null);
   const [pendingFullScanIds, setPendingFullScanIds] = useState<string[]>([]);
   const [readyFullScanIds, setReadyFullScanIds] = useState<string[]>([]);
+  const [networkDialogOpen, setNetworkDialogOpen] = useState(false);
+  const [networkDialogLoading, setNetworkDialogLoading] = useState(false);
+  const [networkDialogError, setNetworkDialogError] = useState<string | null>(null);
+  const [networkDialogScan, setNetworkDialogScan] = useState<Scan | null>(null);
+  const [networkDialogReport, setNetworkDialogReport] = useState<any | null>(null);
 
   const updatePendingFullScanIds = (ids: string[]) => {
     setPendingFullScanIds(ids);
@@ -228,6 +235,60 @@ export default function ReportsPage() {
       }
     }
   }, [pendingFullScanIds, scans]);
+
+  const getNetworkScanPayload = (report: any) =>
+    report?.network_scan ||
+    report?.network_results ||
+    report?.network ||
+    report?.networkScan ||
+    null;
+
+  const openNetworkDialog = async (scan: Scan) => {
+    if (!scan.site_url) {
+      setNetworkDialogError(localize('URL introuvable pour ce scan.', 'No URL found for this scan.'));
+      return;
+    }
+
+    setNetworkDialogScan(scan);
+    setNetworkDialogOpen(true);
+    setNetworkDialogLoading(true);
+    setNetworkDialogError(null);
+    setNetworkDialogReport(null);
+
+    try {
+      const endpoint = '/api/scan-network-ssl';
+      const payload = { url: scan.site_url, full_ssl: true };
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || localize('Impossible de récupérer le scan réseau.', 'Unable to fetch network scan.'));
+      }
+      const data = await response.json();
+      setNetworkDialogReport(data);
+    } catch (err) {
+      setNetworkDialogError(
+        err instanceof Error
+          ? err.message
+          : localize('Impossible de récupérer le scan réseau.', 'Unable to fetch network scan.')
+      );
+    } finally {
+      setNetworkDialogLoading(false);
+    }
+  };
+
+  const networkScanPayload = useMemo(
+    () => (networkDialogReport ? getNetworkScanPayload(networkDialogReport) : null),
+    [networkDialogReport]
+  );
+
+
+  const sslPayload = networkScanPayload?.ssl ?? null;
+  const sslMode = networkScanPayload?.ssl_mode as string | undefined;
+  const sslFallback = Boolean(networkScanPayload?.ssl_fallback);
 
   const ensureRescanCredit = async (requiredCredits: number) => {
     if (DISABLE_CREDIT_CHECK || !user?.id) {
@@ -746,6 +807,131 @@ const handleOpenReport = (scan: Scan) => {
           </div>
         )}
 
+        <Dialog open={networkDialogOpen} onOpenChange={setNetworkDialogOpen}>
+          <DialogContent className="sm:max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>{localize('Scan réseau', 'Network scan')}</DialogTitle>
+              <DialogDescription>
+                {networkDialogScan?.site_name || networkDialogScan?.site_url || ''}
+              </DialogDescription>
+            </DialogHeader>
+            {networkDialogLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {localize('Chargement des résultats réseau...', 'Loading network results...')}
+              </div>
+            ) : networkDialogError ? (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {networkDialogError}
+              </div>
+            ) : !networkScanPayload ? (
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                {localize(
+                  'Aucun résultat réseau disponible pour ce scan.',
+                  'No network results available for this scan.'
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {!sslPayload ? (
+                  <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                    {localize(
+                      'Aucun résultat SSL/TLS disponible. Vérifiez que le scan SSL est activé côté serveur.',
+                      'No SSL/TLS results available. Make sure SSL scanning is enabled on the server.'
+                    )}
+                  </div>
+                ) : sslPayload?.valid !== undefined ? (
+                  <div className="space-y-3 text-sm text-slate-700">
+                    {sslMode && (
+                      <p className="text-xs text-slate-500">
+                        {localize('Mode:', 'Mode:')} {sslMode}
+                        {sslFallback ? ` (${localize('fallback', 'fallback')})` : ''}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Badge className={sslPayload.valid ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700'}>
+                        {sslPayload.valid
+                          ? localize('Certificat valide', 'Valid certificate')
+                          : localize('Certificat invalide', 'Invalid certificate')}
+                      </Badge>
+                      {sslPayload.days_remaining !== undefined && sslPayload.days_remaining !== null && (
+                        <span className="text-xs text-slate-500">
+                          {localize('Jours restants:', 'Days remaining:')} {sslPayload.days_remaining}
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Début', 'Valid from')}</p>
+                        <p>{sslPayload.not_before || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Expiration', 'Expires')}</p>
+                        <p>{sslPayload.not_after || '—'}</p>
+                      </div>
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Sujet', 'Subject')}</p>
+                        <p className="break-words text-xs text-slate-600">
+                          {sslPayload.subject ? JSON.stringify(sslPayload.subject) : '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Émetteur', 'Issuer')}</p>
+                        <p className="break-words text-xs text-slate-600">
+                          {sslPayload.issuer ? JSON.stringify(sslPayload.issuer) : '—'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4 text-sm text-slate-700">
+                    {sslMode && (
+                      <p className="text-xs text-slate-500">
+                        {localize('Mode:', 'Mode:')} {sslMode}
+                        {sslFallback ? ` (${localize('fallback', 'fallback')})` : ''}
+                      </p>
+                    )}
+                    {sslPayload.protocols && (
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Protocoles', 'Protocols')}</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {Object.entries(sslPayload.protocols).map(([protocol, status]) => (
+                            <Badge key={protocol} variant="secondary" className="text-xs">
+                              {protocol}: {String(status)}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {Array.isArray(sslPayload.vulnerabilities) && sslPayload.vulnerabilities.length > 0 && (
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Vulnérabilités', 'Vulnerabilities')}</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                          {sslPayload.vulnerabilities.map((item: string, idx: number) => (
+                            <li key={`ssl-vuln-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {Array.isArray(sslPayload.recommendations) && sslPayload.recommendations.length > 0 && (
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Recommandations', 'Recommendations')}</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                          {sslPayload.recommendations.map((item: string, idx: number) => (
+                            <li key={`ssl-rec-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
         {scans.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-slate-500">
@@ -806,6 +992,14 @@ const handleOpenReport = (scan: Scan) => {
                               <DropdownMenuItem onClick={() => handleDownloadReport(scan, 'xlsx')}>
                                 XLSX
                               </DropdownMenuItem>
+                              {scan.scan_type === 'complete' && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => openNetworkDialog(scan)}>
+                                    {localize('Scan SSL/TLS', 'SSL/TLS scan')}
+                                  </DropdownMenuItem>
+                                </>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         ) : (

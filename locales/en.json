@@ -38,6 +38,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "newScan": "New Scan",
+    "checkDomain": "Check domain",
     "reports": "My scans",
     "detection": "Detection",
     "subscription": "Subscription",

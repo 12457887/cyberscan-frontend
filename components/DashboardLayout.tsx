@@ -21,6 +21,7 @@ import {
   Inbox,
   ScrollText,
   Layers,
+  Database,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Logo } from '@/components/Logo';
@@ -32,6 +33,7 @@ import { Language, useLanguage } from '@/contexts/LanguageContext';
 const NAV_ITEMS = [
   { key: 'nav.dashboard', href: '/dashboard', icon: Home },
   { key: 'nav.newScan', href: '/dashboard/scan', icon: Scan },
+  { key: 'nav.checkDomain', href: '/dashboard/check-domain', icon: Database },
   { key: 'nav.reports', href: '/dashboard/reports', icon: FileText },
   { key: 'nav.detection', href: '/dashboard/detection', icon: Shield },
   { key: 'nav.subscription', href: '/dashboard/subscription', icon: CreditCard },
