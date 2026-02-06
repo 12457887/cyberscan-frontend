@@ -8,8 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { supabase } from '@/lib/supabase';
-import { Loader2, User } from 'lucide-react';
+import { PASSWORD_REQUIREMENTS_TEXT, validatePasswordStrength } from '@/lib/password';
+import { Eye, EyeOff, Loader2, User } from 'lucide-react';
 
 export default function ProfilePage() {
   const { user, profile } = useAuth();
@@ -22,6 +24,10 @@ export default function ProfilePage() {
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [oldPassword, setOldPassword] = useState('');
+  const [showPasswords, setShowPasswords] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -31,6 +37,8 @@ export default function ProfilePage() {
       setEmail(profile.email);
     }
   }, [profile]);
+
+  const userEmail = user?.email || profile?.email || email;
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,10 +73,20 @@ export default function ProfilePage() {
 
     setPasswordMessage(null);
 
-    if (!newPassword || newPassword.length < 8) {
+    if (!userEmail) {
       setPasswordMessage({
         type: 'error',
-        text: localize('Le mot de passe doit contenir au moins 8 caractères.', 'Password must be at least 8 characters long.'),
+        text: localize('Email introuvable pour ce compte.', 'Unable to resolve your email address.'),
+      });
+      return;
+    }
+
+    const passwordCheck = validatePasswordStrength(newPassword);
+    if (!passwordCheck.valid) {
+      const message = `Weak password. ${PASSWORD_REQUIREMENTS_TEXT}`;
+      setPasswordMessage({
+        type: 'error',
+        text: localize(`Mot de passe faible. ${PASSWORD_REQUIREMENTS_TEXT}`, message),
       });
       return;
     }
@@ -81,8 +99,88 @@ export default function ProfilePage() {
       return;
     }
 
+    if (!otpSent) {
+      if (!oldPassword) {
+        setPasswordMessage({
+          type: 'error',
+          text: localize('Ancien mot de passe requis.', 'Current password is required.'),
+        });
+        return;
+      }
+
+      setPasswordLoading(true);
+      try {
+        const { error: authError } = await supabase.auth.signInWithPassword({
+          email: userEmail,
+          password: oldPassword,
+        });
+        if (authError) {
+          setPasswordMessage({
+            type: 'error',
+            text: localize('Ancien mot de passe incorrect.', 'Current password is incorrect.'),
+          });
+          return;
+        }
+
+        const response = await fetch('/service/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'password-change', email: userEmail }),
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          setPasswordMessage({
+            type: 'error',
+            text: payload?.error || localize("Impossible d'envoyer le code.", 'Unable to send the code.'),
+          });
+          return;
+        }
+
+        setOtpSent(true);
+        setPasswordMessage({
+          type: 'success',
+          text:
+            payload?.message ||
+            localize(
+              'Un code de confirmation a été envoyé à votre email.',
+              'A confirmation code has been sent to your email.'
+            ),
+        });
+      } catch (error) {
+        console.error('Error sending password change code:', error);
+        setPasswordMessage({
+          type: 'error',
+          text: localize("Impossible d'envoyer le code.", 'Unable to send the code.'),
+        });
+      } finally {
+        setPasswordLoading(false);
+      }
+      return;
+    }
+
+    if (otp.length !== 6) {
+      setPasswordMessage({
+        type: 'error',
+        text: localize('Code invalide ou incomplet.', 'Invalid or incomplete code.'),
+      });
+      return;
+    }
+
     setPasswordLoading(true);
     try {
+      const { error: otpError } = await supabase.auth.verifyOtp({
+        email: userEmail,
+        token: otp,
+        type: 'recovery',
+      });
+      if (otpError) {
+        setPasswordMessage({
+          type: 'error',
+          text: otpError.message || localize('Code invalide ou expiré.', 'Invalid or expired code.'),
+        });
+        return;
+      }
+
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
 
@@ -90,8 +188,11 @@ export default function ProfilePage() {
         type: 'success',
         text: localize('Mot de passe mis à jour avec succès.', 'Password updated successfully.'),
       });
+      setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setOtp('');
+      setOtpSent(false);
     } catch (error) {
       console.error('Error updating password:', error);
       setPasswordMessage({
@@ -186,26 +287,100 @@ export default function ProfilePage() {
           <CardContent>
             <form onSubmit={handleUpdatePassword} className="space-y-4">
               <div className="space-y-2">
+                <Label htmlFor="oldPassword">{localize('Ancien mot de passe', 'Current password')}</Label>
+                <div className="relative">
+                  <Input
+                    id="oldPassword"
+                    type={showPasswords ? 'text' : 'password'}
+                    value={oldPassword}
+                    onChange={(e) => setOldPassword(e.target.value)}
+                    placeholder="********"
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                    aria-label={showPasswords
+                      ? localize('Masquer le mot de passe', 'Hide password')
+                      : localize('Afficher le mot de passe', 'Show password')}
+                  >
+                    {showPasswords ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="newPassword">{localize('Nouveau mot de passe', 'New password')}</Label>
-                <Input
-                  id="newPassword"
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="********"
-                />
+                <div className="relative">
+                  <Input
+                    id="newPassword"
+                    type={showPasswords ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="********"
+                    minLength={8}
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                    aria-label={showPasswords
+                      ? localize('Masquer le mot de passe', 'Hide password')
+                      : localize('Afficher le mot de passe', 'Show password')}
+                  >
+                    {showPasswords ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">{localize('Confirmer le mot de passe', 'Confirm password')}</Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="********"
-                />
+                <div className="relative">
+                  <Input
+                    id="confirmPassword"
+                    type={showPasswords ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="********"
+                    minLength={8}
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                    aria-label={showPasswords
+                      ? localize('Masquer le mot de passe', 'Hide password')
+                      : localize('Afficher le mot de passe', 'Show password')}
+                  >
+                    {showPasswords ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
+
+              {otpSent && (
+                <div className="space-y-2">
+                  <Label>{localize('Code de confirmation', 'Confirmation code')}</Label>
+                  <InputOTP maxLength={6} value={otp} onChange={setOtp} required>
+                    <InputOTPGroup>
+                      {[0, 1, 2, 3, 4, 5].map((slot) => (
+                        <InputOTPSlot key={slot} index={slot} />
+                      ))}
+                    </InputOTPGroup>
+                  </InputOTP>
+                  <p className="text-xs text-slate-500">
+                    {localize(
+                      'Entrez le code envoyé par email pour confirmer le changement.',
+                      'Enter the code sent by email to confirm the change.'
+                    )}
+                  </p>
+                </div>
+              )}
 
               {passwordMessage && (
                 <div
@@ -217,16 +392,61 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              <Button type="submit" disabled={passwordLoading}>
-                {passwordLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {localize('Mise à jour...', 'Updating...')}
-                  </>
-                ) : (
-                  localize('Mettre à jour le mot de passe', 'Update password')
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" disabled={passwordLoading}>
+                  {passwordLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {localize('Mise à jour...', 'Updating...')}
+                    </>
+                  ) : otpSent ? (
+                    localize('Confirmer le code', 'Confirm code')
+                  ) : (
+                    localize('Envoyer le code', 'Send confirmation code')
+                  )}
+                </Button>
+                {otpSent && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={passwordLoading || !userEmail}
+                    onClick={async () => {
+                      setPasswordMessage(null);
+                      if (!userEmail) {
+                        setPasswordMessage({
+                          type: 'error',
+                          text: localize('Email introuvable pour ce compte.', 'Unable to resolve your email address.'),
+                        });
+                        return;
+                      }
+                      const response = await fetch('/service/auth', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'password-change', email: userEmail }),
+                      });
+                      const payload = await response.json().catch(() => null);
+                      if (!response.ok) {
+                        setPasswordMessage({
+                          type: 'error',
+                          text: payload?.error || localize("Impossible d'envoyer le code.", 'Unable to send the code.'),
+                        });
+                        return;
+                      }
+                      setPasswordMessage({
+                        type: 'success',
+                        text:
+                          payload?.message ||
+                          localize(
+                            'Un nouveau code de confirmation a été envoyé.',
+                            'A new confirmation code has been sent.'
+                          ),
+                      });
+                    }}
+                  >
+                    {localize('Renvoyer le code', 'Resend code')}
+                  </Button>
                 )}
-              </Button>
+              </div>
             </form>
           </CardContent>
         </Card>

@@ -242,6 +242,92 @@ export default function ReportsPage() {
     report?.network ||
     report?.networkScan ||
     null;
+  const formatCertInfo = (value: any) => {
+    if (value === null || value === undefined || value === '') return '—';
+
+    const pairs: Array<[string, string]> = [];
+    const keyMap: Record<string, string> = {
+      commonname: 'CN',
+      common_name: 'CN',
+      cn: 'CN',
+      organizationname: 'O',
+      organization_name: 'O',
+      o: 'O',
+      organizationalunitname: 'OU',
+      organizational_unit_name: 'OU',
+      ou: 'OU',
+      countryname: 'C',
+      country_name: 'C',
+      c: 'C',
+      stateorprovincename: 'ST',
+      state_or_province_name: 'ST',
+      st: 'ST',
+      localityname: 'L',
+      locality_name: 'L',
+      l: 'L',
+      emailaddress: 'email',
+      email_address: 'email',
+      email: 'email',
+    };
+    const isPair = (input: any) =>
+      Array.isArray(input) &&
+      input.length === 2 &&
+      typeof input[0] === 'string' &&
+      (typeof input[1] === 'string' || typeof input[1] === 'number' || typeof input[1] === 'boolean');
+
+    const pushPair = (key: string, val: any) => {
+      if (val === null || val === undefined || val === '') return;
+      pairs.push([key, String(val)]);
+    };
+
+    const collect = (input: any) => {
+      if (input === null || input === undefined || input === '') return;
+      if (isPair(input)) {
+        pushPair(input[0], input[1]);
+        return;
+      }
+      if (Array.isArray(input)) {
+        input.forEach((item) => collect(item));
+        return;
+      }
+      if (typeof input === 'object') {
+        const keys = Object.keys(input);
+        if (!keys.length) return;
+        const numericOnly = keys.every((key) => /^\d+$/.test(key));
+        if (numericOnly) {
+          keys.forEach((key) => collect((input as Record<string, any>)[key]));
+          return;
+        }
+        keys.forEach((key) => {
+          const val = (input as Record<string, any>)[key];
+          if (isPair(val)) {
+            pushPair(val[0], val[1]);
+          } else if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+            pushPair(key, val);
+          } else {
+            collect(val);
+          }
+        });
+        return;
+      }
+      pairs.push(['value', String(input)]);
+    };
+
+    collect(value);
+    if (!pairs.length) return '—';
+
+    const formatKey = (key: string) => {
+      const normalized = key.replace(/\s+/g, '').toLowerCase();
+      return keyMap[normalized] || key;
+    };
+
+    return pairs
+      .map(([key, val]) => {
+        const label = formatKey(key);
+        return label === key ? `${key}: ${val}` : `${label}=${val}`;
+      })
+      .join(', ');
+  };
 
   const openNetworkDialog = async (scan: Scan) => {
     if (!scan.site_url) {
@@ -874,13 +960,13 @@ const handleOpenReport = (scan: Scan) => {
                       <div>
                         <p className="text-xs uppercase text-slate-400">{localize('Sujet', 'Subject')}</p>
                         <p className="break-words text-xs text-slate-600">
-                          {sslPayload.subject ? JSON.stringify(sslPayload.subject) : '—'}
+                          {formatCertInfo(sslPayload.subject)}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs uppercase text-slate-400">{localize('Émetteur', 'Issuer')}</p>
                         <p className="break-words text-xs text-slate-600">
-                          {sslPayload.issuer ? JSON.stringify(sslPayload.issuer) : '—'}
+                          {formatCertInfo(sslPayload.issuer)}
                         </p>
                       </div>
                     </div>

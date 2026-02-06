@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
-import { Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
@@ -22,6 +22,7 @@ const OTP_COOLDOWN_MS = 60_000;
 function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -38,6 +39,17 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const { executeRecaptcha } = useGoogleReCaptcha();
   const requiresRecaptcha = Boolean(recaptchaSiteKey);
+
+  useEffect(() => {
+    if (!otpCooldownUntil) return;
+    const delay = otpCooldownUntil - Date.now();
+    if (delay <= 0) {
+      setOtpCooldownUntil(null);
+      return;
+    }
+    const timer = setTimeout(() => setOtpCooldownUntil(null), delay);
+    return () => clearTimeout(timer);
+  }, [otpCooldownUntil]);
 
   const runRecaptcha = async (action: string) => {
     if (!requiresRecaptcha) return true;
@@ -209,6 +221,96 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
     router.push('/dashboard');
   };
 
+  const handleResendOtp = async () => {
+    if (otpCooldownUntil && Date.now() < otpCooldownUntil) {
+      return;
+    }
+    setError('');
+    setOtp('');
+    setOtpLoading(true);
+
+    if (!(await runRecaptcha('register_resend_otp'))) {
+      setOtpLoading(false);
+      return;
+    }
+
+    if (!acceptedTerms) {
+      setError(
+        localize(
+          "Vous devez accepter les conditions générales d'utilisation avant de poursuivre.",
+          'You must accept the terms and conditions before continuing.'
+        )
+      );
+      setOtpLoading(false);
+      return;
+    }
+
+    const passwordCheck = validatePasswordStrength(password);
+    if (!passwordCheck.valid) {
+      const message = `Weak password. ${PASSWORD_REQUIREMENTS_TEXT}`;
+      setError(localize(message, message));
+      setOtpLoading(false);
+      return;
+    }
+
+    const usernameCheck = validateUsername(fullName);
+    const safeFullName = usernameCheck.valid ? usernameCheck.sanitized : '';
+    if (!usernameCheck.valid) {
+      setError(
+        usernameCheck.reason === 'suspicious'
+          ? localize(
+              "Nom complet invalide : caractères ou mots-clés suspects détectés.",
+              'Invalid full name: suspicious characters detected.'
+            )
+          : localize(
+              `Nom complet invalide. ${USERNAME_REQUIREMENTS_TEXT}`,
+              `Invalid full name. ${USERNAME_REQUIREMENTS_TEXT}`
+            )
+      );
+      setOtpLoading(false);
+      return;
+    }
+
+    const phoneCheck = validatePhoneNumber(phoneNumber);
+    if (!phoneCheck.valid) {
+      setError(
+        localize(
+          phoneCheck.reason === 'missing'
+            ? 'Veuillez saisir un numéro de téléphone.'
+            : `Numéro de téléphone invalide. ${PHONE_REQUIREMENTS_TEXT}`,
+          phoneCheck.reason === 'missing'
+            ? 'Please provide a phone number.'
+            : `Invalid phone number. ${PHONE_REQUIREMENTS_TEXT}`
+        )
+      );
+      setOtpLoading(false);
+      return;
+    }
+    const safePhone = phoneCheck.sanitized;
+
+    const { error, message } = await signUp(email, password, safeFullName, safePhone);
+
+    if (error) {
+      if ((error as any)?.code === 'over_email_send_rate_limit' || /rate limit/i.test(error?.message || '')) {
+        setError(
+          localize(
+            'Vous venez de demander un code. Merci de patienter environ 1 minute avant de recommencer.',
+            'You just requested a code. Please wait about a minute before trying again.'
+          )
+        );
+        setOtpCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
+      } else {
+        setError(message || error.message || localize("Impossible d'envoyer le code OTP.", 'Unable to send the OTP.'));
+      }
+      setOtpLoading(false);
+      return;
+    }
+
+    setOtpSent(true);
+    setOtpCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
+    setOtpLoading(false);
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4">
       <Card className="w-full max-w-md">
@@ -262,15 +364,28 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
               <>
                 <div className="space-y-2">
                   <Label htmlFor="password">{localize('Mot de passe', 'Password')}</Label>
+                  <div className="relative">
                   <Input
                     id="password"
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    minLength={6}
+                    minLength={8}
+                    className="pr-10"
                   />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                      aria-label={showPassword
+                        ? localize('Masquer le mot de passe', 'Hide password')
+                        : localize('Afficher le mot de passe', 'Show password')}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -322,6 +437,23 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
                     ))}
                   </InputOTPGroup>
                 </InputOTP>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-slate-500">
+                    {localize(
+                      "Vous n'avez pas reçu le code ?",
+                      "Didn't receive the code?"
+                    )}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleResendOtp}
+                    disabled={otpLoading || (otpCooldownUntil !== null && Date.now() < otpCooldownUntil)}
+                  >
+                    {localize('Renvoyer le code', 'Resend code')}
+                  </Button>
+                </div>
               </div>
             )}
 

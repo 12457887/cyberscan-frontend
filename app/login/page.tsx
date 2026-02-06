@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -13,6 +13,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp
 import Link from 'next/link';
 import Image from 'next/image';
 import { GoogleReCaptchaProvider, useGoogleReCaptcha } from 'react-google-recaptcha-v3';
+import { PASSWORD_REQUIREMENTS_TEXT, validatePasswordStrength } from '@/lib/password';
 
 const OTP_COOLDOWN_MS = 60_000;
 
@@ -21,6 +22,7 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
+  const [otpType, setOtpType] = useState<'email' | 'signup'>('email');
   const [loading, setLoading] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
   const [error, setError] = useState('');
@@ -33,6 +35,27 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const { executeRecaptcha } = useGoogleReCaptcha();
   const requiresRecaptcha = Boolean(recaptchaSiteKey);
+
+  useEffect(() => {
+    if (!otpCooldownUntil) return;
+    const delay = otpCooldownUntil - Date.now();
+    if (delay <= 0) {
+      setOtpCooldownUntil(null);
+      return;
+    }
+    const timer = setTimeout(() => setOtpCooldownUntil(null), delay);
+    return () => clearTimeout(timer);
+  }, [otpCooldownUntil]);
+
+  const isEmailNotConfirmed = (authError: any) => {
+    const message = String(authError?.message || '').toLowerCase();
+    return (
+      authError?.code === 'email_not_confirmed' ||
+      message.includes('email not confirmed') ||
+      message.includes('confirm your email') ||
+      message.includes('not confirmed')
+    );
+  };
 
   const runRecaptcha = async (action: string) => {
     if (!requiresRecaptcha) return true;
@@ -79,46 +102,90 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
     const { error } = await signIn(email, password);
 
     if (error) {
-      setError(error.message);
+      if (isEmailNotConfirmed(error)) {
+        setLoading(false);
+        const sent = await handleSendOtp('signup');
+        if (sent) {
+          setError(
+            localize(
+              'Compte en attente de vérification. Un nouveau code a été envoyé par email.',
+              'Your account waiting verification, a code has been sent by email.'
+            )
+          );
+        }
+        return;
+      }
+
+      const message = String(error.message || '');
+      if (message.toLowerCase().includes('invalid login credentials')) {
+        setLoading(false);
+        const result = await sendOtp('email', { silent: true });
+        if (result.ok) {
+          setError(
+            localize(
+              'Si votre compte est en attente de vérification, un code a été envoyé par email.',
+              'Your account waiting verification, a code has been sent by email.'
+            )
+          );
+          return;
+        }
+      }
+
+      setError(error.message || localize("Erreur lors de la connexion", 'Login error'));
       setLoading(false);
     } else {
       router.push('/dashboard');
     }
   };
 
-  /** ----------------------------------------
-   * SEND OTP
-   ---------------------------------------- */
-  const handleSendOtp = async () => {
-    setError('');
+  const sendOtp = async (
+    mode: 'email' | 'signup',
+    options: { silent?: boolean } = {}
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!options.silent) {
+      setError('');
+    }
     setOtp('');
     setOtpLoading(true);
+    setOtpType(mode);
 
     if (!(await runRecaptcha('login_otp_request'))) {
       setOtpLoading(false);
-      return;
+      return { ok: false, error: 'recaptcha' };
     }
 
-    const { error } = await signInWithOtp(email);
+    const { error } = await signInWithOtp(email, mode === 'signup');
 
     if (error) {
-      if ((error as any)?.code === 'over_email_send_rate_limit' || /rate limit/i.test(error?.message || '')) {
-        setError(
-          localize(
-            'Vous venez de demander un code. Merci de patienter environ 1 minute avant de recommencer.',
-            'You just requested a code. Please wait about a minute before trying again.'
-          )
-        );
-        setOtpCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
-      } else {
-        setError(error.message || localize("Erreur lors de l'envoi du code", 'Error while sending code'));
+      if (!options.silent) {
+        if ((error as any)?.code === 'over_email_send_rate_limit' || /rate limit/i.test(error?.message || '')) {
+          setError(
+            localize(
+              'Vous venez de demander un code. Merci de patienter environ 1 minute avant de recommencer.',
+              'You just requested a code. Please wait about a minute before trying again.'
+            )
+          );
+          setOtpCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
+        } else {
+          setError(error.message || localize("Erreur lors de l'envoi du code", 'Error while sending code'));
+        }
       }
-    } else {
-      setOtpSent(true);
-      setOtpCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
+      setOtpLoading(false);
+      return { ok: false, error: error.message };
     }
 
+    setOtpSent(true);
+    setOtpCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
     setOtpLoading(false);
+    return { ok: true };
+  };
+
+  /** ----------------------------------------
+   * SEND OTP
+   ---------------------------------------- */
+  const handleSendOtp = async (mode: 'email' | 'signup' = otpType) => {
+    const result = await sendOtp(mode);
+    return result.ok;
   };
 
   /** ----------------------------------------
@@ -129,7 +196,23 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
     setError('');
     setLoading(true);
 
-    const { error } = await verifyOtp(email, otp);
+    if (otpType === 'signup') {
+      const passwordCheck = validatePasswordStrength(password);
+      if (!passwordCheck.valid) {
+        const message = `Weak password. ${PASSWORD_REQUIREMENTS_TEXT}`;
+        setError(localize(`Mot de passe faible. ${PASSWORD_REQUIREMENTS_TEXT}`, message));
+        setLoading(false);
+        return;
+      }
+    }
+
+    const { error } = await verifyOtp(
+      email,
+      otp,
+      undefined,
+      otpType,
+      otpType === 'signup' ? password : undefined
+    );
 
     if (error) {
       setError(error.message || localize('Code invalide', 'Invalid code'));
@@ -237,6 +320,20 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
                     ))}
                   </InputOTPGroup>
                 </InputOTP>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-slate-500">
+                    {localize("Vous n'avez pas reçu le code ?", "Didn't receive the code?")}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleSendOtp(otpType)}
+                    disabled={otpLoading || (otpCooldownUntil !== null && Date.now() < otpCooldownUntil)}
+                  >
+                    {localize('Renvoyer le code', 'Resend code')}
+                  </Button>
+                </div>
               </div>
             )}
 

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useSubscriptionPlan } from '@/hooks/use-subscription-plan';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +15,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 export default function CheckDomainPage() {
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
+  const { plan, loading: planLoading } = useSubscriptionPlan();
+  const isRestrictedPlan = !plan || plan === 'free' || plan === 'basic';
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -113,6 +116,14 @@ export default function CheckDomainPage() {
     setLoading(true);
 
     try {
+      if (isRestrictedPlan) {
+        throw new Error(
+          localize(
+            'Cette option est disponible à partir du plan Pro.',
+            'This option is available starting with the Pro plan.'
+          )
+        );
+      }
       const normalizedQuery = normalizeDehashedQuery(normalizeQuery(query));
       const response = await fetch('/api/dehashed/check-domain', {
         method: 'POST',
@@ -165,14 +176,13 @@ export default function CheckDomainPage() {
                 pickValue(entry, ['email']),
                 pickValue(entry, ['username', 'user', 'login']),
                 pickValue(entry, ['name', 'full_name', 'fullname']),
-                pickValue(entry, ['ip_address', 'ip', 'ipaddress']),
                 pickValue(entry, ['password', 'pass', 'hashed_password', 'hash']),
                 pickValue(entry, ['database_name', 'database', 'source', 'leak']),
               ];
               return `<tr>${cells.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`;
             })
             .join('')
-        : `<tr><td colspan="6">${escapeHtml(localize('Aucune fuite trouvée.', 'No leaks found.'))}</td></tr>`;
+        : `<tr><td colspan="5">${escapeHtml(localize('Aucune fuite trouvée.', 'No leaks found.'))}</td></tr>`;
 
     const html = `<!doctype html>
 <html>
@@ -209,7 +219,6 @@ export default function CheckDomainPage() {
           <th>Email</th>
           <th>${escapeHtml(localize('Utilisateur', 'Username'))}</th>
           <th>${escapeHtml(localize('Nom', 'Name'))}</th>
-          <th>IP</th>
           <th>${escapeHtml(localize('Mot de passe / Hash', 'Password / Hash'))}</th>
           <th>${escapeHtml(localize('Source', 'Source'))}</th>
         </tr>
@@ -275,17 +284,30 @@ export default function CheckDomainPage() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   required
+                  disabled={isRestrictedPlan || planLoading}
                 />
                 <p className="text-xs text-slate-500">
                   {localize('Une seule valeur par recherche.', 'One value per search.')}
                 </p>
+                {isRestrictedPlan && !planLoading && (
+                  <p className="text-xs text-emerald-700">
+                    {localize(
+                      'Passez au plan Pro pour utiliser cette option.',
+                      'Upgrade to the Pro plan to use this option.'
+                    )}
+                  </p>
+                )}
               </div>
 
               {error && (
                 <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{error}</div>
               )}
 
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading || isRestrictedPlan || planLoading}
+              >
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -310,7 +332,7 @@ export default function CheckDomainPage() {
                 {lastQuery ? lastQuery : localize('Aucune recherche lancée.', 'No search yet.')}
               </CardDescription>
             </div>
-            <Button type="button" variant="outline" onClick={exportPdf} disabled={!result}>
+            <Button type="button" variant="outline" onClick={exportPdf} disabled={!result} className="hidden">
               <Download className="mr-2 h-4 w-4" />
               {localize('Exporter PDF', 'Export PDF')}
             </Button>
@@ -345,7 +367,6 @@ export default function CheckDomainPage() {
                         <TableHead>Email</TableHead>
                         <TableHead>{localize('Utilisateur', 'Username')}</TableHead>
                         <TableHead>{localize('Nom', 'Name')}</TableHead>
-                        <TableHead>IP</TableHead>
                         <TableHead>{localize('Mot de passe / Hash', 'Password / Hash')}</TableHead>
                         <TableHead>{localize('Source', 'Source')}</TableHead>
                       </TableRow>
@@ -361,9 +382,6 @@ export default function CheckDomainPage() {
                           </TableCell>
                           <TableCell className="text-xs text-slate-600">
                             {pickValue(entry, ['name', 'full_name', 'fullname'])}
-                          </TableCell>
-                          <TableCell className="text-xs text-slate-600">
-                            {pickValue(entry, ['ip_address', 'ip', 'ipaddress'])}
                           </TableCell>
                           <TableCell className="max-w-[220px] break-words text-xs text-slate-600">
                             {pickValue(entry, ['password', 'pass', 'hashed_password', 'hash'])}

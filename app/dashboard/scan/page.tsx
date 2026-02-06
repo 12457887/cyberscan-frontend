@@ -16,6 +16,7 @@ import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const DISABLE_CREDIT_CHECK = process.env.NEXT_PUBLIC_DISABLE_CREDITS === 'true'; // permet de désactiver la vérif en dev
 
@@ -28,7 +29,8 @@ const PLAN_CONCURRENCY: Record<string, number> = {
 };
 const LIGHT_SCAN_CREDIT_COST = 1;
 const FULL_SCAN_CREDIT_COST = 3;
-const FULL_SCAN_PLANS = new Set(['pro', 'enterprise', 'admin']);
+const FULL_SCAN_PLANS = new Set(['admin']);
+const FULL_TOOL_SCAN_PLANS = new Set(['admin']);
 
 const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
 const FINISHED_STATUSES = new Set(['completed', 'failed']);
@@ -69,6 +71,7 @@ export default function ScanPage() {
   const { user, profile, refreshCredits } = useAuth();
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
+  const isAdmin = profile?.role === 'admin';
   const router = useRouter();
   const [siteUrl, setSiteUrl] = useState('');
   const [scanType, setScanType] = useState<'light' | 'complete'>('light');
@@ -78,6 +81,7 @@ export default function ScanPage() {
   const [scanProgress, setScanProgress] = useState(0);
   const [planType, setPlanType] = useState<string>('free');
   const canUseFullScan = FULL_SCAN_PLANS.has(planType);
+  const canUseFullToolScan = FULL_TOOL_SCAN_PLANS.has(planType);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const websiteConfigRef = useRef<HTMLDivElement | null>(null);
   const [activeTool, setActiveTool] = useState<'website' | 'ssl' | 'network'>('website');
@@ -168,12 +172,84 @@ export default function ScanPage() {
     mode: 'ssl' | 'network',
     scanMode: 'light' | 'full' = 'full'
   ) => {
+    if (scanMode === 'full' && !canUseFullToolScan) {
+      setNetworkError(
+        localize(
+          'Le scan complet SSL/TLS et réseau est disponible pour les plans Pro et Premium.',
+          'Full SSL/TLS and network scans are available on Pro and Premium plans.'
+        )
+      );
+      return;
+    }
     setNetworkError('');
     setNetworkLoading(true);
     setNetworkDialogMode(mode);
     setActiveTool(mode === 'network' ? 'network' : 'ssl');
     setNetworkDialogResult(null);
+    const requiredCredits = scanMode === 'full' ? FULL_SCAN_CREDIT_COST : LIGHT_SCAN_CREDIT_COST;
+    let previousUsed: number | null = null;
+    let creditsReserved = false;
     try {
+
+      if (!DISABLE_CREDIT_CHECK) {
+        if (!user?.id) {
+          setNetworkError(
+            localize(
+              'Vous devez être connecté pour utiliser vos crédits.',
+              'You must be logged in to use credits.'
+            )
+          );
+          setNetworkLoading(false);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('credits')
+          .select('used_credits, total_credits')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (error || !data) {
+          setNetworkError(
+            localize('Impossible de vérifier vos crédits.', 'Unable to verify your credits.')
+          );
+          setNetworkLoading(false);
+          return;
+        }
+
+        const total = data.total_credits ?? 0;
+        const used = data.used_credits ?? 0;
+        const remaining = total - used;
+        if (remaining < requiredCredits) {
+          setNetworkError(
+            localize(
+              `Crédits insuffisants pour lancer ce scan. ${requiredCredits} crédits requis.`,
+              `Not enough credits to launch this scan. ${requiredCredits} credits required.`
+            )
+          );
+          setNetworkLoading(false);
+          return;
+        }
+
+        const newUsed = used + requiredCredits;
+        const { error: reserveError } = await supabase
+          .from('credits')
+          .update({ used_credits: newUsed, updated_at: new Date().toISOString() })
+          .eq('user_id', user.id);
+
+        if (reserveError) {
+          setNetworkError(localize('Impossible de réserver vos crédits.', 'Unable to reserve your credits.'));
+          setNetworkLoading(false);
+          return;
+        }
+
+        previousUsed = used;
+        creditsReserved = true;
+        if (typeof refreshCredits === 'function') {
+          refreshCredits().catch((err) => console.error('Erreur refresh credits:', err));
+        }
+      }
+
       const normalizedUrl = normalizeSingleUrl(siteUrl);
       const networkMode = scanMode === 'light' ? 'quick' : 'full';
       const endpoint =
@@ -193,6 +269,16 @@ export default function ScanPage() {
 
       if (!response.ok) {
         const text = await response.text();
+        if (!DISABLE_CREDIT_CHECK && creditsReserved && previousUsed !== null && user?.id) {
+          await supabase
+            .from('credits')
+            .update({ used_credits: previousUsed, updated_at: new Date().toISOString() })
+            .eq('user_id', user.id);
+          if (typeof refreshCredits === 'function') {
+            refreshCredits().catch((err) => console.error('Erreur refresh credits:', err));
+          }
+          creditsReserved = false;
+        }
         throw new Error(text || localize('Échec du scan réseau.', 'Network scan failed.'));
       }
 
@@ -202,6 +288,16 @@ export default function ScanPage() {
       setNetworkDialogTarget(normalizedUrl);
       setNetworkDialogOpen(true);
     } catch (err) {
+      if (!DISABLE_CREDIT_CHECK && creditsReserved && previousUsed !== null && user?.id) {
+        await supabase
+          .from('credits')
+          .update({ used_credits: previousUsed, updated_at: new Date().toISOString() })
+          .eq('user_id', user.id);
+        if (typeof refreshCredits === 'function') {
+          refreshCredits().catch((refreshErr) => console.error('Erreur refresh credits:', refreshErr));
+        }
+        creditsReserved = false;
+      }
       setNetworkError(
         err instanceof Error
           ? err.message
@@ -217,7 +313,7 @@ export default function ScanPage() {
     if (!user) return;
 
     if (profile?.role === 'admin') {
-      setPlanType('enterprise');
+      setPlanType('admin');
       return;
     }
 
@@ -243,6 +339,12 @@ export default function ScanPage() {
     }
   }, [canUseFullScan, scanType]);
 
+  useEffect(() => {
+    if (toolScanMode === 'full' && !canUseFullToolScan) {
+      setToolScanMode('light');
+    }
+  }, [canUseFullToolScan, toolScanMode]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -257,8 +359,8 @@ export default function ScanPage() {
       if (scanType === 'complete' && !canUseFullScan) {
         setError(
           localize(
-            'Le scan complet est disponible pour les plans Pro, Enterprise et Admin.',
-            'Full scans are available on Pro, Enterprise, and Admin plans.'
+            'Le scan complet est réservé au plan Admin.',
+            'Full scans are available on the Admin plan only.'
           )
         );
         setLoading(false);
@@ -480,6 +582,134 @@ export default function ScanPage() {
   const isSslLoading = networkLoading && networkDialogMode === 'ssl';
   const isNetworkLoading = networkLoading && networkDialogMode === 'network';
   const isAnyQuickLoading = loading || networkLoading;
+  const buildNetworkPortRows = (payload: any) => {
+    if (!payload) return [];
+    const scans = payload?.scans ?? {};
+    const preferredKey = payload?.scan_profile;
+    let scanData = preferredKey && scans[preferredKey] ? scans[preferredKey] : null;
+    if (!scanData) {
+      const firstKey = Object.keys(scans)[0];
+      scanData = firstKey ? scans[firstKey] : null;
+    }
+    const hosts = Array.isArray(scanData?.hosts) ? scanData.hosts : [];
+    const rows: Array<{
+      host: string;
+      port: string;
+      protocol: string;
+      state: string;
+      service: string;
+      product: string;
+      version: string;
+    }> = [];
+    hosts.forEach((host: any) => {
+      const hostLabel =
+        host?.address ||
+        (Array.isArray(host?.hostnames) && host.hostnames.length > 0 ? host.hostnames[0] : null) ||
+        payload?.domain ||
+        '—';
+      const ports = Array.isArray(host?.ports) ? host.ports : [];
+      ports.forEach((port: any) => {
+        rows.push({
+          host: String(hostLabel),
+          port: port?.port ? String(port.port) : '—',
+          protocol: port?.protocol ? String(port.protocol) : '—',
+          state: port?.state ? String(port.state) : '—',
+          service: port?.service ? String(port.service) : '—',
+          product: port?.product ? String(port.product) : '—',
+          version: port?.version ? String(port.version) : '—',
+        });
+      });
+    });
+    if (!rows.length) return rows;
+    const openRows = rows.filter((row) => row.state.toLowerCase() !== 'closed');
+    return openRows.length ? openRows : rows;
+  };
+  const formatCertInfo = (value: any) => {
+    if (value === null || value === undefined || value === '') return '—';
+
+    const pairs: Array<[string, string]> = [];
+    const keyMap: Record<string, string> = {
+      commonname: 'CN',
+      common_name: 'CN',
+      cn: 'CN',
+      organizationname: 'O',
+      organization_name: 'O',
+      o: 'O',
+      organizationalunitname: 'OU',
+      organizational_unit_name: 'OU',
+      ou: 'OU',
+      countryname: 'C',
+      country_name: 'C',
+      c: 'C',
+      stateorprovincename: 'ST',
+      state_or_province_name: 'ST',
+      st: 'ST',
+      localityname: 'L',
+      locality_name: 'L',
+      l: 'L',
+      emailaddress: 'email',
+      email_address: 'email',
+      email: 'email',
+    };
+    const isPair = (input: any) =>
+      Array.isArray(input) &&
+      input.length === 2 &&
+      typeof input[0] === 'string' &&
+      (typeof input[1] === 'string' || typeof input[1] === 'number' || typeof input[1] === 'boolean');
+
+    const pushPair = (key: string, val: any) => {
+      if (val === null || val === undefined || val === '') return;
+      pairs.push([key, String(val)]);
+    };
+
+    const collect = (input: any) => {
+      if (input === null || input === undefined || input === '') return;
+      if (isPair(input)) {
+        pushPair(input[0], input[1]);
+        return;
+      }
+      if (Array.isArray(input)) {
+        input.forEach((item) => collect(item));
+        return;
+      }
+      if (typeof input === 'object') {
+        const keys = Object.keys(input);
+        if (!keys.length) return;
+        const numericOnly = keys.every((key) => /^\d+$/.test(key));
+        if (numericOnly) {
+          keys.forEach((key) => collect((input as Record<string, any>)[key]));
+          return;
+        }
+        keys.forEach((key) => {
+          const val = (input as Record<string, any>)[key];
+          if (isPair(val)) {
+            pushPair(val[0], val[1]);
+          } else if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+            pushPair(key, val);
+          } else {
+            collect(val);
+          }
+        });
+        return;
+      }
+      pairs.push(['value', String(input)]);
+    };
+
+    collect(value);
+    if (!pairs.length) return '—';
+
+    const formatKey = (key: string) => {
+      const normalized = key.replace(/\s+/g, '').toLowerCase();
+      return keyMap[normalized] || key;
+    };
+
+    return pairs
+      .map(([key, val]) => {
+        const label = formatKey(key);
+        return label === key ? `${key}: ${val}` : `${label}=${val}`;
+      })
+      .join(', ');
+  };
   const quickToolCopy: Record<
     'ssl' | 'network',
     {
@@ -597,13 +827,13 @@ export default function ScanPage() {
             <div>
               <p className="text-xs uppercase text-slate-400">{localize('Sujet', 'Subject')}</p>
               <p className="break-words text-xs text-slate-600">
-                {sslPayload.subject ? JSON.stringify(sslPayload.subject) : '—'}
+                {formatCertInfo(sslPayload.subject)}
               </p>
             </div>
             <div>
               <p className="text-xs uppercase text-slate-400">{localize('Émetteur', 'Issuer')}</p>
               <p className="break-words text-xs text-slate-600">
-                {sslPayload.issuer ? JSON.stringify(sslPayload.issuer) : '—'}
+                {formatCertInfo(sslPayload.issuer)}
               </p>
             </div>
           </div>
@@ -651,6 +881,51 @@ export default function ScanPage() {
             </ul>
           </div>
         )}
+      </div>
+    );
+  };
+
+  const renderNetworkSection = () => {
+    const portRows = buildNetworkPortRows(networkScanPayload);
+    if (!portRows.length) {
+      return (
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          {localize('Aucun port ouvert détecté.', 'No open ports detected.')}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        <p className="text-xs uppercase text-slate-400">
+          {localize('Ports et services', 'Open ports & services')}
+        </p>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Host</TableHead>
+              <TableHead>Port</TableHead>
+              <TableHead>Protocol</TableHead>
+              <TableHead>{localize('État', 'State')}</TableHead>
+              <TableHead>Service</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Version</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {portRows.map((row, index) => (
+              <TableRow key={`port-${index}`}>
+                <TableCell className="text-xs text-slate-700">{row.host}</TableCell>
+                <TableCell className="text-xs text-slate-700">{row.port}</TableCell>
+                <TableCell className="text-xs text-slate-600">{row.protocol}</TableCell>
+                <TableCell className="text-xs text-slate-600">{row.state}</TableCell>
+                <TableCell className="text-xs text-slate-600">{row.service}</TableCell>
+                <TableCell className="text-xs text-slate-600">{row.product}</TableCell>
+                <TableCell className="text-xs text-slate-600">{row.version}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
     );
   };
@@ -723,7 +998,7 @@ export default function ScanPage() {
                       {
                         key: 'website',
                         label: localize('Scanner site web', 'Website Scanner'),
-                        description: localize('Analyse applicative (light/complete).', 'Web app scan (light/complete).'),
+                        description: localize('Analyse applicative.', 'Web app scan.'),
                         icon: <Scan className="h-4 w-4" />,
                       },
                       {
@@ -791,17 +1066,31 @@ export default function ScanPage() {
                         <p className="text-xs text-slate-500 mt-1">{activeToolCopy.light.meta}</p>
                       </div>
                     </div>
-                    <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-slate-50 cursor-pointer">
-                      <RadioGroupItem value="full" id="tool-full" className="mt-1" />
-                      <div className="flex-1">
-                        <Label htmlFor="tool-full" className="cursor-pointer flex items-center">
-                          <ShieldCheck className="w-4 h-4 mr-2 text-emerald-600" />
-                          <span className="font-medium">{activeToolCopy.full.title}</span>
-                        </Label>
-                        <p className="text-sm text-slate-600 mt-1">{activeToolCopy.full.description}</p>
-                        <p className="text-xs text-slate-500 mt-1">{activeToolCopy.full.meta}</p>
+                    {isAdmin && (
+                      <div
+                        className={`flex items-start space-x-3 p-4 border rounded-lg ${
+                          canUseFullToolScan ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-60 cursor-not-allowed'
+                        }`}
+                      >
+                        <RadioGroupItem
+                          value="full"
+                          id="tool-full"
+                          className="mt-1"
+                          disabled={!canUseFullToolScan}
+                        />
+                        <div className="flex-1">
+                          <Label
+                            htmlFor="tool-full"
+                            className={`flex items-center ${canUseFullToolScan ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                          >
+                            <ShieldCheck className="w-4 h-4 mr-2 text-emerald-600" />
+                            <span className="font-medium">{activeToolCopy.full.title}</span>
+                          </Label>
+                          <p className="text-sm text-slate-600 mt-1">{activeToolCopy.full.description}</p>
+                          <p className="text-xs text-slate-500 mt-1">{activeToolCopy.full.meta}</p>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </RadioGroup>
 
                   {networkError && (
@@ -852,36 +1141,33 @@ export default function ScanPage() {
                         </p>
                       </div>
                     </div>
-                    <div
-                      className={`flex items-start space-x-3 p-4 border rounded-lg ${
-                        canUseFullScan ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-60 cursor-not-allowed'
-                      }`}
-                    >
-                      <RadioGroupItem value="complete" id="complete" className="mt-1" disabled={!canUseFullScan} />
-                      <div className="flex-1">
-                        <Label
-                          htmlFor="complete"
-                          className={`flex items-center ${canUseFullScan ? 'cursor-pointer' : 'cursor-not-allowed'}`}
-                        >
-                          <ShieldCheck className="w-4 h-4 mr-2 text-emerald-600" />
-                          <span className="font-medium">{localize('Scan Complet', 'Full scan')}</span>
-                          {!canUseFullScan && (
-                            <span className="ml-2 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-700">
-                              {localize('Pro/Enterprise/Admin', 'Pro/Enterprise/Admin')}
-                            </span>
-                          )}
-                        </Label>
-                        <p className="text-sm text-slate-600 mt-1">
-                          {localize(
-                            'Analyse approfondie avec tests actifs et couverture élargie.',
-                            'In-depth analysis with active tests and extended coverage.'
-                          )}
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">
-                          {localize('Durée: ~20 minutes | Coût: 3 crédits', 'Duration: ~20 minutes | Cost: 3 credits')}
-                        </p>
+                    {isAdmin && (
+                      <div
+                        className={`flex items-start space-x-3 p-4 border rounded-lg ${
+                          canUseFullScan ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-60 cursor-not-allowed'
+                        }`}
+                      >
+                        <RadioGroupItem value="complete" id="complete" className="mt-1" disabled={!canUseFullScan} />
+                        <div className="flex-1">
+                          <Label
+                            htmlFor="complete"
+                            className={`flex items-center ${canUseFullScan ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                          >
+                            <ShieldCheck className="w-4 h-4 mr-2 text-emerald-600" />
+                            <span className="font-medium">{localize('Scan Complet', 'Full scan')}</span>
+                          </Label>
+                          <p className="text-sm text-slate-600 mt-1">
+                            {localize(
+                              'Analyse approfondie avec tests actifs et couverture élargie.',
+                              'In-depth analysis with active tests and extended coverage.'
+                            )}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            {localize('Durée: ~20 minutes | Coût: 3 crédits', 'Duration: ~20 minutes | Cost: 3 credits')}
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </RadioGroup>
                 </div>
               )}
@@ -923,9 +1209,16 @@ export default function ScanPage() {
         <Dialog open={networkDialogOpen} onOpenChange={setNetworkDialogOpen}>
           <DialogContent className="sm:max-w-4xl">
             <DialogHeader>
-              <DialogTitle>{localize('Résultats du scan réseau', 'Network scan results')}</DialogTitle>
+              <DialogTitle>
+                {networkDialogMode === 'ssl'
+                  ? localize('Résultats du scan SSL/TLS', 'SSL/TLS scan results')
+                  : localize('Résultats du scan réseau', 'Network scan results')}
+              </DialogTitle>
               <DialogDescription>
-                {networkDialogTarget || localize('Scan réseau', 'Network scan')}
+                {networkDialogTarget ||
+                  (networkDialogMode === 'ssl'
+                    ? localize('Scan SSL/TLS', 'SSL/TLS scan')
+                    : localize('Scan réseau', 'Network scan'))}
               </DialogDescription>
             </DialogHeader>
 
@@ -934,7 +1227,7 @@ export default function ScanPage() {
                 {localize('Aucun résultat réseau disponible.', 'No network results available.')}
               </div>
             ) : (
-              renderSslSection()
+              networkDialogMode === 'ssl' ? renderSslSection() : renderNetworkSection()
             )}
           </DialogContent>
         </Dialog>
