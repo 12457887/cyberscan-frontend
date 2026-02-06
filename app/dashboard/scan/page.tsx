@@ -22,8 +22,8 @@ const DISABLE_CREDIT_CHECK = process.env.NEXT_PUBLIC_DISABLE_CREDITS === 'true';
 
 const PLAN_CONCURRENCY: Record<string, number> = {
   free: 1,
-  basic: 5,
-  pro: 10,
+  basic: 1,
+  pro: 5,
   enterprise: 10,
   admin: 10,
 };
