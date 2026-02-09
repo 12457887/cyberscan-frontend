@@ -971,11 +971,9 @@ export default function DashboardPageClient() {
                   className="w-full"
                   style={{ width: '100%', height: 350 }}
                 >
-                    <LineChart 
-                    data={vulnerabilityTrend} 
-                    margin={{ left: 24, right: 16, top: 12, bottom: 64 }}
-                    width={690}
-                    height={350}
+                  <LineChart
+                    data={vulnerabilityTrend}
+                    margin={{ left: 24, right: 16, top: 12, bottom: 72 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                      <XAxis
@@ -1001,11 +999,11 @@ export default function DashboardPageClient() {
                       tick={false}
                     />
                     <ChartTooltip cursor={false} />
-                    <ChartLegend 
+                    <ChartLegend
                       verticalAlign="bottom"
-                      height={60}
-                      wrapperStyle={{ paddingTop: '150px' }}
+                      height={48}
                       iconType="circle"
+                      content={<ChartLegendContent />}
                     />
 
                     <Line type="monotone" dataKey="critical" stroke="hsl(0, 82%, 60%)" strokeWidth={2.5} dot={false} name="Critical" />

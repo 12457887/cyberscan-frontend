@@ -38,6 +38,7 @@
   "nav": {
     "dashboard": "Tableau de bord",
     "newScan": "Nouveau Scan",
+    "checkDomain": "Vérifier domaine",
     "reports": "Mes scans",
     "detection": "Détection",
     "subscription": "Abonnement",

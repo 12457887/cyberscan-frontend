@@ -53,11 +53,44 @@ async function forwardPasswordReset(body: any) {
   }
 }
 
+async function forwardPasswordChange(body: any) {
+  if (!body?.email) {
+    return NextResponse.json({ error: 'Email is required.' }, { status: 400 });
+  }
+
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (backendKey) {
+      headers['x-backend-api-key'] = backendKey;
+    }
+
+    const res = await fetch(`${backendUrl}/auth/send-password-change`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email: body.email }),
+    });
+
+    const payload = await res.json();
+    return NextResponse.json(payload, { status: res.status });
+  } catch (error: any) {
+    console.error('Password change proxy error:', error);
+    return NextResponse.json(
+      { error: "Impossible d'envoyer le code de confirmation." },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     if (body?.action === 'password-reset') {
       return forwardPasswordReset(body);
+    }
+    if (body?.action === 'password-change') {
+      return forwardPasswordChange(body);
     }
     const { userId, email, fullName, phoneNumber } = body || {};
 

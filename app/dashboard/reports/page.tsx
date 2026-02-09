@@ -11,12 +11,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase, Scan, Vulnerability } from '@/lib/supabase';
 import { formatDateDMY } from '@/lib/date';
-import { Download, Filter, Loader2 } from 'lucide-react';
+import { CheckCircle2, Download, Filter, Loader2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -26,12 +27,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const DISABLE_CREDIT_CHECK = process.env.NEXT_PUBLIC_DISABLE_CREDITS === 'true';
 const LIGHT_SCAN_CREDIT_COST = 1;
 const FULL_SCAN_CREDIT_COST = 3;
 const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
 const FINISHED_STATUSES = new Set(['completed', 'failed']);
+const PENDING_FULL_SCAN_KEY = 'pending_full_scan_ids';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitForScanCompletion(scanIds: Array<string | number>, maxAttempts = 60, intervalMs = 5000) {
@@ -109,14 +112,42 @@ export default function ReportsPage() {
   const [rescanLoadingId, setRescanLoadingId] = useState<string | null>(null);
   const [rescanMessage, setRescanMessage] = useState<string | null>(null);
   const [rescanError, setRescanError] = useState<string | null>(null);
+  const [pendingFullScanIds, setPendingFullScanIds] = useState<string[]>([]);
+  const [readyFullScanIds, setReadyFullScanIds] = useState<string[]>([]);
+  const [networkDialogOpen, setNetworkDialogOpen] = useState(false);
+  const [networkDialogLoading, setNetworkDialogLoading] = useState(false);
+  const [networkDialogError, setNetworkDialogError] = useState<string | null>(null);
+  const [networkDialogScan, setNetworkDialogScan] = useState<Scan | null>(null);
+  const [networkDialogReport, setNetworkDialogReport] = useState<any | null>(null);
+
+  const updatePendingFullScanIds = (ids: string[]) => {
+    setPendingFullScanIds(ids);
+    if (typeof window === 'undefined') return;
+    if (ids.length) {
+      window.sessionStorage.setItem(PENDING_FULL_SCAN_KEY, JSON.stringify(ids));
+    } else {
+      window.sessionStorage.removeItem(PENDING_FULL_SCAN_KEY);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = window.sessionStorage.getItem(PENDING_FULL_SCAN_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        updatePendingFullScanIds(parsed.filter(Boolean));
+      }
+    } catch (storageError) {
+      console.warn('Impossible de lire les scans complets en attente:', storageError);
+      window.sessionStorage.removeItem(PENDING_FULL_SCAN_KEY);
+    }
+  }, []);
 
   useEffect(() => {
     if (!user) return;
-
     loadReports();
-
-    const interval = setInterval(loadReports, 30000);
-    return () => clearInterval(interval);
   }, [user]);
 
   const loadReports = async () => {
@@ -163,6 +194,187 @@ export default function ReportsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!user) return;
+    const intervalMs = scans.some((scan) => !scan.status || ACTIVE_STATUSES.has(scan.status))
+      ? 5000
+      : 30000;
+    const interval = setInterval(loadReports, intervalMs);
+    return () => clearInterval(interval);
+  }, [user, scans]);
+
+  useEffect(() => {
+    if (!pendingFullScanIds.length) return;
+
+    const completedIds: string[] = [];
+    const failedIds: string[] = [];
+    const stillPending: string[] = [];
+
+    pendingFullScanIds.forEach((scanId) => {
+      const scan = scans.find((entry) => entry.id === scanId);
+      if (!scan) {
+        stillPending.push(scanId);
+        return;
+      }
+      if (scan.status === 'completed' && scan.mongo_report_id) {
+        completedIds.push(scanId);
+        return;
+      }
+      if (scan.status === 'failed') {
+        failedIds.push(scanId);
+        return;
+      }
+      stillPending.push(scanId);
+    });
+
+    if (completedIds.length || failedIds.length) {
+      updatePendingFullScanIds(stillPending);
+      if (completedIds.length) {
+        setReadyFullScanIds((prev) => Array.from(new Set([...prev, ...completedIds])));
+      }
+    }
+  }, [pendingFullScanIds, scans]);
+
+  const getNetworkScanPayload = (report: any) =>
+    report?.network_scan ||
+    report?.network_results ||
+    report?.network ||
+    report?.networkScan ||
+    null;
+  const formatCertInfo = (value: any) => {
+    if (value === null || value === undefined || value === '') return '—';
+
+    const pairs: Array<[string, string]> = [];
+    const keyMap: Record<string, string> = {
+      commonname: 'CN',
+      common_name: 'CN',
+      cn: 'CN',
+      organizationname: 'O',
+      organization_name: 'O',
+      o: 'O',
+      organizationalunitname: 'OU',
+      organizational_unit_name: 'OU',
+      ou: 'OU',
+      countryname: 'C',
+      country_name: 'C',
+      c: 'C',
+      stateorprovincename: 'ST',
+      state_or_province_name: 'ST',
+      st: 'ST',
+      localityname: 'L',
+      locality_name: 'L',
+      l: 'L',
+      emailaddress: 'email',
+      email_address: 'email',
+      email: 'email',
+    };
+    const isPair = (input: any) =>
+      Array.isArray(input) &&
+      input.length === 2 &&
+      typeof input[0] === 'string' &&
+      (typeof input[1] === 'string' || typeof input[1] === 'number' || typeof input[1] === 'boolean');
+
+    const pushPair = (key: string, val: any) => {
+      if (val === null || val === undefined || val === '') return;
+      pairs.push([key, String(val)]);
+    };
+
+    const collect = (input: any) => {
+      if (input === null || input === undefined || input === '') return;
+      if (isPair(input)) {
+        pushPair(input[0], input[1]);
+        return;
+      }
+      if (Array.isArray(input)) {
+        input.forEach((item) => collect(item));
+        return;
+      }
+      if (typeof input === 'object') {
+        const keys = Object.keys(input);
+        if (!keys.length) return;
+        const numericOnly = keys.every((key) => /^\d+$/.test(key));
+        if (numericOnly) {
+          keys.forEach((key) => collect((input as Record<string, any>)[key]));
+          return;
+        }
+        keys.forEach((key) => {
+          const val = (input as Record<string, any>)[key];
+          if (isPair(val)) {
+            pushPair(val[0], val[1]);
+          } else if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+            pushPair(key, val);
+          } else {
+            collect(val);
+          }
+        });
+        return;
+      }
+      pairs.push(['value', String(input)]);
+    };
+
+    collect(value);
+    if (!pairs.length) return '—';
+
+    const formatKey = (key: string) => {
+      const normalized = key.replace(/\s+/g, '').toLowerCase();
+      return keyMap[normalized] || key;
+    };
+
+    return pairs
+      .map(([key, val]) => {
+        const label = formatKey(key);
+        return label === key ? `${key}: ${val}` : `${label}=${val}`;
+      })
+      .join(', ');
+  };
+
+  const openNetworkDialog = async (scan: Scan) => {
+    if (!scan.site_url) {
+      setNetworkDialogError(localize('URL introuvable pour ce scan.', 'No URL found for this scan.'));
+      return;
+    }
+
+    setNetworkDialogScan(scan);
+    setNetworkDialogOpen(true);
+    setNetworkDialogLoading(true);
+    setNetworkDialogError(null);
+    setNetworkDialogReport(null);
+
+    try {
+      const endpoint = '/api/scan-network-ssl';
+      const payload = { url: scan.site_url, full_ssl: true };
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || localize('Impossible de récupérer le scan réseau.', 'Unable to fetch network scan.'));
+      }
+      const data = await response.json();
+      setNetworkDialogReport(data);
+    } catch (err) {
+      setNetworkDialogError(
+        err instanceof Error
+          ? err.message
+          : localize('Impossible de récupérer le scan réseau.', 'Unable to fetch network scan.')
+      );
+    } finally {
+      setNetworkDialogLoading(false);
+    }
+  };
+
+  const networkScanPayload = useMemo(
+    () => (networkDialogReport ? getNetworkScanPayload(networkDialogReport) : null),
+    [networkDialogReport]
+  );
+
+
+  const sslPayload = networkScanPayload?.ssl ?? null;
+  const sslMode = networkScanPayload?.ssl_mode as string | undefined;
+  const sslFallback = Boolean(networkScanPayload?.ssl_fallback);
 
   const ensureRescanCredit = async (requiredCredits: number) => {
     if (DISABLE_CREDIT_CHECK || !user?.id) {
@@ -354,6 +566,13 @@ export default function ReportsPage() {
         trackCreditConsumption([inserted.id]);
       }
 
+      if (scanMode === 'complete') {
+        const nextPending = Array.from(
+          new Set([...pendingFullScanIds, String(inserted.id)].filter(Boolean))
+        );
+        updatePendingFullScanIds(nextPending);
+      }
+
       setRescanMessage(
         localize('Scan relancé avec succès. Il apparaîtra dans la liste dès son démarrage.', 'Scan relaunched successfully. It will appear in the list once it starts.')
       );
@@ -430,6 +649,15 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
   }
 };
 
+const handleOpenReport = (scan: Scan) => {
+  if (scan.status !== 'completed' || !scan.mongo_report_id) {
+    alert(localize("Rapport non disponible. Lancez un scan d'abord.", 'Report unavailable. Please run a scan first.'));
+    return;
+  }
+  const url = `/api/generate-report/${scan.mongo_report_id}?report_format=pdf&display=inline`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+};
+
 
   const getVulnerabilityTotal = (scan: Scan) => {
     if (typeof scan.vulnerabilities_count === 'number') {
@@ -445,6 +673,12 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
     filters.risk !== 'all' ||
     filters.dateFrom ||
     filters.dateTo;
+
+  const activeCompleteScans = scans.filter(
+    (scan) => scan.scan_type === 'complete' && ACTIVE_STATUSES.has(scan.status)
+  );
+  const pendingFullCount = activeCompleteScans.length || pendingFullScanIds.length;
+  const readyFullScans = scans.filter((scan) => readyFullScanIds.includes(scan.id));
 
   const filteredScans = scans.filter((scan) => {
     if (filters.search) {
@@ -606,6 +840,183 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
             {rescanMessage}
           </div>
         )}
+        {readyFullScans.length > 0 && (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="mt-0.5 h-4 w-4" />
+              <div className="space-y-2">
+                <p className="font-semibold">
+                  {readyFullScans.length > 1
+                    ? localize('Rapports complets prêts.', 'Full scan reports are ready.')
+                    : localize('Rapport complet prêt.', 'Full scan report is ready.')}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {readyFullScans.map((scan) => (
+                    <Button
+                      key={`ready-${scan.id}`}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleOpenReport(scan)}
+                    >
+                      {localize('Afficher le rapport', 'View report')}
+                      {scan.site_name ? ` • ${scan.site_name}` : ''}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {pendingFullCount > 0 && (
+          <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+            <div className="flex items-start gap-2">
+              <Loader2 className="mt-0.5 h-4 w-4 animate-spin" />
+              <div className="space-y-1">
+                <p className="font-semibold">
+                  {pendingFullCount > 1
+                    ? localize('Scans complets démarrés.', 'Full scans started.')
+                    : localize('Scan complet démarré.', 'Full scan started.')}
+                </p>
+                <p>
+                  {pendingFullCount > 1
+                    ? localize(
+                        'Les rapports seront affichés dès la fin du scan.',
+                        'Reports will be available as soon as the scans finish.'
+                      )
+                    : localize(
+                        'Le rapport sera affiché dès la fin du scan.',
+                        'The report will be available as soon as the scan finishes.'
+                      )}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <Dialog open={networkDialogOpen} onOpenChange={setNetworkDialogOpen}>
+          <DialogContent className="sm:max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>{localize('Scan réseau', 'Network scan')}</DialogTitle>
+              <DialogDescription>
+                {networkDialogScan?.site_name || networkDialogScan?.site_url || ''}
+              </DialogDescription>
+            </DialogHeader>
+            {networkDialogLoading ? (
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {localize('Chargement des résultats réseau...', 'Loading network results...')}
+              </div>
+            ) : networkDialogError ? (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {networkDialogError}
+              </div>
+            ) : !networkScanPayload ? (
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                {localize(
+                  'Aucun résultat réseau disponible pour ce scan.',
+                  'No network results available for this scan.'
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {!sslPayload ? (
+                  <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                    {localize(
+                      'Aucun résultat SSL/TLS disponible. Vérifiez que le scan SSL est activé côté serveur.',
+                      'No SSL/TLS results available. Make sure SSL scanning is enabled on the server.'
+                    )}
+                  </div>
+                ) : sslPayload?.valid !== undefined ? (
+                  <div className="space-y-3 text-sm text-slate-700">
+                    {sslMode && (
+                      <p className="text-xs text-slate-500">
+                        {localize('Mode:', 'Mode:')} {sslMode}
+                        {sslFallback ? ` (${localize('fallback', 'fallback')})` : ''}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <Badge className={sslPayload.valid ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700'}>
+                        {sslPayload.valid
+                          ? localize('Certificat valide', 'Valid certificate')
+                          : localize('Certificat invalide', 'Invalid certificate')}
+                      </Badge>
+                      {sslPayload.days_remaining !== undefined && sslPayload.days_remaining !== null && (
+                        <span className="text-xs text-slate-500">
+                          {localize('Jours restants:', 'Days remaining:')} {sslPayload.days_remaining}
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Début', 'Valid from')}</p>
+                        <p>{sslPayload.not_before || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Expiration', 'Expires')}</p>
+                        <p>{sslPayload.not_after || '—'}</p>
+                      </div>
+                    </div>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Sujet', 'Subject')}</p>
+                        <p className="break-words text-xs text-slate-600">
+                          {formatCertInfo(sslPayload.subject)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Émetteur', 'Issuer')}</p>
+                        <p className="break-words text-xs text-slate-600">
+                          {formatCertInfo(sslPayload.issuer)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4 text-sm text-slate-700">
+                    {sslMode && (
+                      <p className="text-xs text-slate-500">
+                        {localize('Mode:', 'Mode:')} {sslMode}
+                        {sslFallback ? ` (${localize('fallback', 'fallback')})` : ''}
+                      </p>
+                    )}
+                    {sslPayload.protocols && (
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Protocoles', 'Protocols')}</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {Object.entries(sslPayload.protocols).map(([protocol, status]) => (
+                            <Badge key={protocol} variant="secondary" className="text-xs">
+                              {protocol}: {String(status)}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {Array.isArray(sslPayload.vulnerabilities) && sslPayload.vulnerabilities.length > 0 && (
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Vulnérabilités', 'Vulnerabilities')}</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                          {sslPayload.vulnerabilities.map((item: string, idx: number) => (
+                            <li key={`ssl-vuln-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {Array.isArray(sslPayload.recommendations) && sslPayload.recommendations.length > 0 && (
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">{localize('Recommandations', 'Recommendations')}</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                          {sslPayload.recommendations.map((item: string, idx: number) => (
+                            <li key={`ssl-rec-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {scans.length === 0 ? (
           <Card>
@@ -667,6 +1078,14 @@ const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') =>
                               <DropdownMenuItem onClick={() => handleDownloadReport(scan, 'xlsx')}>
                                 XLSX
                               </DropdownMenuItem>
+                              {scan.scan_type === 'complete' && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => openNetworkDialog(scan)}>
+                                    {localize('Scan SSL/TLS', 'SSL/TLS scan')}
+                                  </DropdownMenuItem>
+                                </>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         ) : (

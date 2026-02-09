@@ -11,8 +11,10 @@ import { Button } from '@/components/ui/button';
 import { Shield, Loader2 } from 'lucide-react';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { supabase } from '@/lib/supabase';
+import { PASSWORD_REQUIREMENTS_TEXT, validatePasswordStrength } from '@/lib/password';
 
 type Step = 'request' | 'verify' | 'reset';
+const OTP_COOLDOWN_MS = 60_000;
 
 export default function ForgotPasswordPage() {
   const { choose } = useLanguage();
@@ -26,6 +28,7 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [status, setStatus] = useState<'success' | 'error' | null>(null);
+  const [otpCooldownUntil, setOtpCooldownUntil] = useState<number | null>(null);
   const redirectTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => () => {
@@ -34,13 +37,23 @@ export default function ForgotPasswordPage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!otpCooldownUntil) return;
+    const delay = otpCooldownUntil - Date.now();
+    if (delay <= 0) {
+      setOtpCooldownUntil(null);
+      return;
+    }
+    const timer = setTimeout(() => setOtpCooldownUntil(null), delay);
+    return () => clearTimeout(timer);
+  }, [otpCooldownUntil]);
+
   const resetMessages = () => {
     setMessage(null);
     setStatus(null);
   };
 
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const sendOtp = async () => {
     resetMessages();
     setLoading(true);
 
@@ -64,6 +77,7 @@ export default function ForgotPasswordPage() {
             )
         );
         setStep('verify');
+        setOtpCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
       }
     } catch (err: any) {
       setStatus('error');
@@ -71,6 +85,11 @@ export default function ForgotPasswordPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await sendOtp();
   };
 
   const resetToRequest = () => {
@@ -107,9 +126,11 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     resetMessages();
 
-    if (!newPassword || newPassword.length < 8) {
+    const passwordCheck = validatePasswordStrength(newPassword);
+    if (!passwordCheck.valid) {
+      const message = `Weak password. ${PASSWORD_REQUIREMENTS_TEXT}`;
       setStatus('error');
-      setMessage(localize('Le mot de passe doit contenir au moins 8 caractères.', 'Password must be at least 8 characters.'));
+      setMessage(localize(`Mot de passe faible. ${PASSWORD_REQUIREMENTS_TEXT}`, message));
       return;
     }
 
@@ -201,6 +222,20 @@ export default function ForgotPasswordPage() {
                   ))}
                 </InputOTPGroup>
               </InputOTP>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-slate-500">
+                  {localize("Vous n'avez pas reçu le code ?", "Didn't receive the code?")}
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={sendOtp}
+                  disabled={loading || (otpCooldownUntil !== null && Date.now() < otpCooldownUntil)}
+                >
+                  {localize('Renvoyer le code', 'Resend code')}
+                </Button>
+              </div>
 
               {message && (
                 <div className={`text-sm p-3 rounded-md ${status === 'success' ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'}`}>
@@ -234,6 +269,7 @@ export default function ForgotPasswordPage() {
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
+                  minLength={8}
                 />
               </div>
 
@@ -246,6 +282,7 @@ export default function ForgotPasswordPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
+                  minLength={8}
                 />
               </div>
 

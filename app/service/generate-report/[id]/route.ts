@@ -22,6 +22,8 @@ export async function GET(
 
     const { searchParams } = new URL(req.url);
     const format = searchParams.get("report_format") || searchParams.get("format") || "pdf";
+    const display = searchParams.get("display") || searchParams.get("disposition");
+    const wantsInline = (display === "inline" || display === "1") && format === "pdf";
 
     const res = await fetch(`${backendUrl}/generate-report/${id}?report_format=${format}`, {
       method: "GET",
@@ -44,7 +46,7 @@ export async function GET(
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${suggestedFilename}"`,
+        "Content-Disposition": `${wantsInline ? "inline" : "attachment"}; filename="${suggestedFilename}"`,
       },
     });
   } catch (err) {

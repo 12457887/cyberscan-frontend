@@ -61,7 +61,6 @@ export const metadata: Metadata = {
     'website security scanner',
     'CMS vulnerability scanner',
     'security audit',
-    'penetration testing',
     'vulnerability assessment',
   ],
   robots: {
