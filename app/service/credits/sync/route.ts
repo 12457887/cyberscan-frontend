@@ -22,6 +22,75 @@ const adminClient = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false },
 });
 
+const PLAN_CREDITS_LIMITS: Record<string, number> = {
+  free: 3,
+  basic: 20,
+  pro: 50,
+  enterprise: 200,
+  admin: 200,
+};
+
+type SubscriptionRow = {
+  credits_limit?: number | null;
+  plan_type?: string | null;
+  status?: string | null;
+  started_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  expires_at?: string | null;
+};
+
+type CreditsRow = {
+  id?: string | number | null;
+  total_credits?: number | null;
+  used_credits?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+const toMs = (value?: string | null) => {
+  if (!value) return 0;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+};
+
+const pickLatestByDate = <T extends { created_at?: string | null; updated_at?: string | null }>(
+  rows: T[] | null | undefined
+): T | null => {
+  if (!rows || rows.length === 0) return null;
+  return rows.reduce<T | null>((best, row) => {
+    if (!best) return row;
+    const bestMs = Math.max(toMs(best.updated_at), toMs(best.created_at));
+    const rowMs = Math.max(toMs(row.updated_at), toMs(row.created_at));
+    return rowMs >= bestMs ? row : best;
+  }, null);
+};
+
+const getSubscriptionRank = (row: SubscriptionRow, nowMs: number) => {
+  if (row.status === 'active') return 3;
+  if (row.status === 'cancelled') {
+    const expiresAt = toMs(row.expires_at);
+    if (expiresAt > nowMs) return 2;
+  }
+  return 1;
+};
+
+const pickBestSubscription = (rows: SubscriptionRow[] | null | undefined): SubscriptionRow | null => {
+  if (!rows || rows.length === 0) return null;
+  const nowMs = Date.now();
+  return rows.reduce<SubscriptionRow | null>((best, row) => {
+    if (!best) return row;
+    const bestStatusRank = getSubscriptionRank(best, nowMs);
+    const rowStatusRank = getSubscriptionRank(row, nowMs);
+    if (rowStatusRank !== bestStatusRank) {
+      return rowStatusRank > bestStatusRank ? row : best;
+    }
+    const bestTime = Math.max(toMs(best.started_at), toMs(best.updated_at), toMs(best.created_at));
+    const rowTime = Math.max(toMs(row.started_at), toMs(row.updated_at), toMs(row.created_at));
+    return rowTime >= bestTime ? row : best;
+  }, null);
+};
+
 async function getUserId(req: Request) {
   let authHeader = req.headers.get('authorization');
   if (!authHeader) {
@@ -65,33 +134,40 @@ export async function POST(req: Request) {
 
     const userId = userCheck.userId;
 
-    const { data: subscription, error: subscriptionError } = await adminClient
+    const { data: subscriptionRows, error: subscriptionError } = await adminClient
       .from('subscriptions')
-      .select('credits_limit')
-      .eq('user_id', userId)
-      .maybeSingle();
+      .select('credits_limit, plan_type, status, started_at, created_at, updated_at, expires_at')
+      .eq('user_id', userId);
 
     if (subscriptionError) {
       console.error('Erreur lecture abonnement pour credits sync:', subscriptionError);
       return NextResponse.json({ error: 'Impossible de charger abonnement.' }, { status: 500 });
     }
 
-    const creditsLimit = Number(subscription?.credits_limit ?? 0);
-    if (!Number.isFinite(creditsLimit) || creditsLimit <= 0) {
-      return NextResponse.json({ error: 'credits_limit invalide' }, { status: 400 });
-    }
+    const subscription = pickBestSubscription(subscriptionRows as SubscriptionRow[]);
+    const planType = subscription?.plan_type ?? null;
+    const fallbackLimit =
+      planType && typeof PLAN_CREDITS_LIMITS[planType] === 'number'
+        ? PLAN_CREDITS_LIMITS[planType]
+        : null;
+    const creditsLimitValue = subscription?.credits_limit ?? fallbackLimit ?? null;
+    const creditsLimit =
+      creditsLimitValue !== null && creditsLimitValue !== undefined
+        ? Number(creditsLimitValue)
+        : NaN;
+    const hasValidCreditsLimit = Number.isFinite(creditsLimit) && creditsLimit > 0;
 
-    const { data: creditsRow, error: creditsError } = await adminClient
+    const { data: creditsRows, error: creditsError } = await adminClient
       .from('credits')
-      .select('total_credits, used_credits')
-      .eq('user_id', userId)
-      .maybeSingle();
+      .select('id, total_credits, used_credits, created_at, updated_at')
+      .eq('user_id', userId);
 
     if (creditsError) {
       console.error('Erreur lecture credits pour sync:', creditsError);
       return NextResponse.json({ error: 'Impossible de charger credits.' }, { status: 500 });
     }
 
+    const creditsRow = pickLatestByDate(creditsRows as CreditsRow[]);
     const nowIso = new Date().toISOString();
     let action = 'noop';
     let total = Number(creditsRow?.total_credits ?? 0);
@@ -101,6 +177,9 @@ export async function POST(req: Request) {
     const expectedRemaining = Math.max(normalizedTotal - normalizedUsed, 0);
 
     if (!creditsRow) {
+      if (!hasValidCreditsLimit) {
+        return NextResponse.json({ error: 'credits_limit invalide' }, { status: 400 });
+      }
       const { data, error } = await adminClient
         .from('credits')
         .insert({
@@ -122,6 +201,11 @@ export async function POST(req: Request) {
       total = data?.total_credits ?? creditsLimit;
       used = data?.used_credits ?? 0;
     } else if (normalizedTotal <= 0 && normalizedUsed <= 0) {
+      if (!hasValidCreditsLimit) {
+        return NextResponse.json({ error: 'credits_limit invalide' }, { status: 400 });
+      }
+      const creditsId = creditsRow?.id;
+      const hasCreditsId = creditsId !== null && creditsId !== undefined;
       const { data, error } = await adminClient
         .from('credits')
         .update({
@@ -130,7 +214,7 @@ export async function POST(req: Request) {
           last_reset_at: nowIso,
           updated_at: nowIso,
         })
-        .eq('user_id', userId)
+        .eq(hasCreditsId ? 'id' : 'user_id', hasCreditsId ? creditsId : userId)
         .select('total_credits, used_credits')
         .maybeSingle();
 

@@ -36,6 +36,46 @@ const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
 const FINISHED_STATUSES = new Set(['completed', 'failed']);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+type SubscriptionRow = {
+  plan_type?: string | null;
+  status?: string | null;
+  started_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  expires_at?: string | null;
+};
+
+const toMs = (value?: string | null) => {
+  if (!value) return 0;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+};
+
+const getSubscriptionRank = (row: SubscriptionRow, nowMs: number) => {
+  if (row.status === 'active') return 3;
+  if (row.status === 'cancelled') {
+    const expiresAt = toMs(row.expires_at);
+    if (expiresAt > nowMs) return 2;
+  }
+  return 1;
+};
+
+const pickBestSubscription = (rows: SubscriptionRow[] | null | undefined): SubscriptionRow | null => {
+  if (!rows || rows.length === 0) return null;
+  const nowMs = Date.now();
+  return rows.reduce<SubscriptionRow | null>((best, row) => {
+    if (!best) return row;
+    const bestStatusRank = getSubscriptionRank(best, nowMs);
+    const rowStatusRank = getSubscriptionRank(row, nowMs);
+    if (rowStatusRank !== bestStatusRank) {
+      return rowStatusRank > bestStatusRank ? row : best;
+    }
+    const bestTime = Math.max(toMs(best.started_at), toMs(best.updated_at), toMs(best.created_at));
+    const rowTime = Math.max(toMs(row.started_at), toMs(row.updated_at), toMs(row.created_at));
+    return rowTime >= bestTime ? row : best;
+  }, null);
+};
+
 async function waitForScanCompletion(scanIds: Array<string | number>, maxAttempts = 60, intervalMs = 5000) {
   if (!scanIds.length) return 0;
 
@@ -319,16 +359,16 @@ export default function ScanPage() {
 
     supabase
       .from('subscriptions')
-      .select('plan_type')
+      .select('plan_type, status, started_at, created_at, updated_at, expires_at')
       .eq('user_id', user.id)
-      .maybeSingle()
       .then(({ data, error }) => {
         if (error) {
           console.error('Impossible de récupérer le plan:', error);
           return;
         }
-        if (data?.plan_type) {
-          setPlanType(data.plan_type);
+        const best = pickBestSubscription(data as SubscriptionRow[]);
+        if (best?.plan_type) {
+          setPlanType(best.plan_type);
         }
       });
   }, [user, profile?.role]);

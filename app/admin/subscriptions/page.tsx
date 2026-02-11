@@ -57,33 +57,34 @@ export default function AdminSubscriptionsPage() {
       setLoading(true);
       setError(null);
 
-      const { data: subsData, error: subsError } = await supabase
-        .from('subscriptions')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (subsError) throw subsError;
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (!token) {
+        throw new Error(localize('Session expirée, reconnectez-vous.', 'Session expired, please log in again.'));
+      }
 
-      const subscriptionsList = (subsData ?? []) as Subscription[];
+      const response = await fetch('/service/admin/subscriptions', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || localize('Impossible de charger les abonnements.', 'Unable to load subscriptions.'));
+      }
+
+      const subscriptionsList = (payload?.subscriptions ?? []) as Subscription[];
       const subscriptionUserIds = Array.from(new Set(subscriptionsList.map((sub) => sub.user_id))).filter(Boolean);
 
-      const { data: invoicesData, error: invoicesError } = await supabase
-        .from('invoices')
-        .select('id,user_id,plan_type,invoice_id,invoice_pdf_url,hosted_invoice_url,customer_email,created_at')
-        .order('created_at', { ascending: false });
-      if (invoicesError) throw invoicesError;
-
-      const invoicesList = (invoicesData ?? []) as Invoice[];
+      const invoicesList = (payload?.invoices ?? []) as Invoice[];
       const invoiceUserIds = Array.from(new Set(invoicesList.map((invoice) => invoice.user_id))).filter(Boolean);
       const allUserIds = Array.from(new Set([...subscriptionUserIds, ...invoiceUserIds]));
 
       let profilesById = new Map<string, { email?: string | null; full_name?: string | null }>();
-      if (allUserIds.length > 0) {
-        const { data: profilesData, error: profilesError } = await supabase
-          .from('admin_user_view')
-          .select('id, email, full_name')
-          .in('id', allUserIds);
-        if (profilesError) throw profilesError;
-        profilesById = new Map((profilesData ?? []).map((profile) => [profile.id, profile]));
+      const profilesData = (payload?.profiles ?? []) as Array<{ id: string; email?: string | null; full_name?: string | null }>;
+      if (allUserIds.length > 0 && profilesData.length > 0) {
+        profilesById = new Map(profilesData.map((profile) => [profile.id, profile]));
       }
 
       const invoiceRows: ManagedSubscription[] = invoicesList.map((invoice) => {
