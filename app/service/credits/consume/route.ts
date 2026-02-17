@@ -55,7 +55,8 @@ const pickLatestByDate = <T extends { created_at?: string | null; updated_at?: s
 const getUserId = async (req: Request) => {
   const authHeader = req.headers.get('authorization');
   const token = authHeader?.replace('Bearer ', '') || null;
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
+
   const accessToken =
     token || cookieStore.get('sb-access-token')?.value || cookieStore.get('supabase-auth-token')?.value;
 
