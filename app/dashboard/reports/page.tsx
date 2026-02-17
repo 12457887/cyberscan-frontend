@@ -381,24 +381,69 @@ export default function ReportsPage() {
       return { total: 0, used: 0 };
     }
     try {
+      const syncCredits = async () => {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const accessToken = sessionData?.session?.access_token;
+          const response = await fetch('/service/credits/sync', {
+            method: 'POST',
+            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+          });
+          if (!response.ok) {
+            return null;
+          }
+          const payload = await response.json().catch(() => null);
+          return payload?.credits ?? null;
+        } catch (syncErr) {
+          console.error('Erreur sync crédits rescan:', syncErr);
+          return null;
+        }
+      };
+
       const { data, error } = await supabase
         .from('credits')
-        .select('total_credits, used_credits')
+        .select('id, total_credits, used_credits, updated_at, created_at')
         .eq('user_id', user.id)
+        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (error) {
         console.error('Erreur lecture crédits rescan:', error);
-        setRescanError(
-          localize('Impossible de vérifier vos crédits. Réessayez plus tard.', 'Unable to verify your credits. Please try again later.')
-        );
-        return null;
+        const synced = await syncCredits();
+        if (!synced) {
+          setRescanError(
+            localize('Impossible de vérifier vos crédits. Réessayez plus tard.', 'Unable to verify your credits. Please try again later.')
+          );
+          return null;
+        }
       }
 
-      const total = data?.total_credits ?? 0;
-      const used = data?.used_credits ?? 0;
+      let total = data?.total_credits ?? 0;
+      let used = data?.used_credits ?? 0;
+      let creditRowId = data?.id ?? null;
       const remaining = total - used;
       if (remaining < requiredCredits) {
+        const synced = await syncCredits();
+        if (synced && Number.isFinite(synced.total) && Number.isFinite(synced.used)) {
+          const { data: refreshed } = await supabase
+            .from('credits')
+            .select('id, total_credits, used_credits, updated_at, created_at')
+            .eq('user_id', user.id)
+            .order('updated_at', { ascending: false })
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          total = refreshed?.total_credits ?? synced.total ?? 0;
+          used = refreshed?.used_credits ?? synced.used ?? 0;
+          creditRowId = refreshed?.id ?? null;
+          const refreshedRemaining = total - used;
+          if (refreshedRemaining >= requiredCredits) {
+            return { id: creditRowId, total, used };
+          }
+        }
+
         setRescanError(
           localize(
             `Crédits insuffisants pour relancer ce scan. ${requiredCredits} crédits requis.`,
@@ -408,7 +453,7 @@ export default function ReportsPage() {
         return null;
       }
 
-      return { total, used };
+      return { id: creditRowId, total, used };
     } catch (err) {
       console.error('Erreur rescan crédits:', err);
       setRescanError(
@@ -447,22 +492,26 @@ export default function ReportsPage() {
       setRescanLoadingId(null);
       return;
     }
-    const newUsed = (creditSnapshot.used ?? 0) + creditCost;
     try {
-      const { error: reserveError } = await supabase
-        .from('credits')
-        .update({
-          used_credits: newUsed,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      const response = await fetch('/service/credits/consume', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify({ amount: creditCost }),
+      });
 
-      if (reserveError) {
-        console.error('Erreur réservation crédits rescan:', reserveError);
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('Erreur réservation crédits rescan:', text || response.statusText);
         setRescanError(localize('Impossible de réserver vos crédits.', 'Unable to reserve your credits.'));
         setRescanLoadingId(null);
         return;
       }
+
       if (typeof refreshCredits === 'function') {
         refreshCredits().catch((err) => console.error('Erreur refresh credits rescan:', err));
       }
