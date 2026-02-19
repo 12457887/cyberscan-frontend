@@ -123,6 +123,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </Button>
   );
 
+
   return (
     <div className="min-h-screen bg-slate-50">
       <nav className="bg-[#1e293b] border-b border-slate-800 text-white sticky top-0 z-50">
@@ -236,7 +237,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="flex">
         <aside className="hidden md:flex md:flex-shrink-0">
           <div className="flex flex-col w-50 bg-[#1e293b] border-r border-slate-900 h-[calc(100vh-4rem)] sticky top-16">
-            <nav className="flex-1 px-4 py-6 space-y-1 text-white">
+            <div className="flex-1 overflow-y-auto px-4 py-6 space-y-1 text-white">
               {filteredNavigation.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
@@ -283,7 +284,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <div className="mt-6">
                 <UpgradeButton />
               </div>
-            </nav>
+            </div>
+
           </div>
         </aside>
 

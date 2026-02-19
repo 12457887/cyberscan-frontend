@@ -36,6 +36,64 @@ const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
 const FINISHED_STATUSES = new Set(['completed', 'failed']);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+type SubscriptionRow = {
+  plan_type?: string | null;
+  status?: string | null;
+  started_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  expires_at?: string | null;
+};
+
+type CreditsRow = {
+  id?: string | number | null;
+  total_credits?: number | null;
+  used_credits?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+const toMs = (value?: string | null) => {
+  if (!value) return 0;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+};
+
+const pickLatestCreditsRow = (rows: CreditsRow[] | null | undefined): CreditsRow | null => {
+  if (!rows || rows.length === 0) return null;
+  return rows.reduce<CreditsRow | null>((best, row) => {
+    if (!best) return row;
+    const bestMs = Math.max(toMs(best.updated_at), toMs(best.created_at));
+    const rowMs = Math.max(toMs(row.updated_at), toMs(row.created_at));
+    return rowMs >= bestMs ? row : best;
+  }, null);
+};
+
+const getSubscriptionRank = (row: SubscriptionRow, nowMs: number) => {
+  if (row.status === 'active') return 3;
+  if (row.status === 'cancelled') {
+    const expiresAt = toMs(row.expires_at);
+    if (expiresAt > nowMs) return 2;
+  }
+  return 1;
+};
+
+const pickBestSubscription = (rows: SubscriptionRow[] | null | undefined): SubscriptionRow | null => {
+  if (!rows || rows.length === 0) return null;
+  const nowMs = Date.now();
+  return rows.reduce<SubscriptionRow | null>((best, row) => {
+    if (!best) return row;
+    const bestStatusRank = getSubscriptionRank(best, nowMs);
+    const rowStatusRank = getSubscriptionRank(row, nowMs);
+    if (rowStatusRank !== bestStatusRank) {
+      return rowStatusRank > bestStatusRank ? row : best;
+    }
+    const bestTime = Math.max(toMs(best.started_at), toMs(best.updated_at), toMs(best.created_at));
+    const rowTime = Math.max(toMs(row.started_at), toMs(row.updated_at), toMs(row.created_at));
+    return rowTime >= bestTime ? row : best;
+  }, null);
+};
+
 async function waitForScanCompletion(scanIds: Array<string | number>, maxAttempts = 60, intervalMs = 5000) {
   if (!scanIds.length) return 0;
 
@@ -167,6 +225,110 @@ export default function ScanPage() {
     return `${url.protocol}//${url.host}`;
   };
 
+  const fetchLatestCreditsSnapshot = async () => {
+    if (!user?.id) {
+      return null;
+    }
+
+    const { data, error } = await supabase
+      .from('credits')
+      .select('id, total_credits, used_credits, created_at, updated_at')
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('Erreur lecture credits scan:', error);
+      return null;
+    }
+
+    const latestRow = pickLatestCreditsRow(data as CreditsRow[]);
+    if (!latestRow) {
+      return null;
+    }
+
+    const total = Number(latestRow.total_credits ?? 0);
+    const used = Number(latestRow.used_credits ?? 0);
+    const normalizedTotal = Number.isFinite(total) ? total : 0;
+    const normalizedUsed = Number.isFinite(used) ? used : 0;
+
+    return {
+      total: normalizedTotal,
+      used: normalizedUsed,
+      remaining: Math.max(normalizedTotal - normalizedUsed, 0),
+    };
+  };
+
+  const syncCreditsSnapshot = async () => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      const response = await fetch('/service/credits/sync', {
+        method: 'POST',
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+      });
+      if (!response.ok) {
+        return null;
+      }
+      const payload = await response.json().catch(() => null);
+      const summary = payload?.credits;
+      if (!summary) {
+        return null;
+      }
+
+      const total = Number(summary.total ?? 0);
+      const used = Number(summary.used ?? 0);
+      const normalizedTotal = Number.isFinite(total) ? total : 0;
+      const normalizedUsed = Number.isFinite(used) ? used : 0;
+      return {
+        total: normalizedTotal,
+        used: normalizedUsed,
+        remaining: Math.max(normalizedTotal - normalizedUsed, 0),
+      };
+    } catch (syncErr) {
+      console.error('Erreur sync credits scan:', syncErr);
+      return null;
+    }
+  };
+
+  const ensureCreditsAvailable = async (
+    requiredCredits: number,
+    onError: (message: string) => void,
+    insufficientMessages: { fr: string; en: string }
+  ) => {
+    if (DISABLE_CREDIT_CHECK) {
+      return true;
+    }
+
+    if (!user?.id) {
+      onError(
+        localize(
+          'Vous devez être connecté pour utiliser vos crédits.',
+          'You must be logged in to use credits.'
+        )
+      );
+      return false;
+    }
+
+    let snapshot = await fetchLatestCreditsSnapshot();
+    if (!snapshot || snapshot.remaining < requiredCredits) {
+      const synced = await syncCreditsSnapshot();
+      if (synced) {
+        snapshot = (await fetchLatestCreditsSnapshot()) ?? synced;
+      }
+    }
+
+    if (!snapshot) {
+      onError(localize('Impossible de vérifier vos crédits.', 'Unable to verify your credits.'));
+      return false;
+    }
+
+    if (snapshot.remaining < requiredCredits) {
+      onError(localize(insufficientMessages.fr, insufficientMessages.en));
+      return false;
+    }
+
+    return true;
+  };
+
 
   const runNetworkScan = async (
     mode: 'ssl' | 'network',
@@ -187,67 +349,31 @@ export default function ScanPage() {
     setActiveTool(mode === 'network' ? 'network' : 'ssl');
     setNetworkDialogResult(null);
     const requiredCredits = scanMode === 'full' ? FULL_SCAN_CREDIT_COST : LIGHT_SCAN_CREDIT_COST;
-    let previousUsed: number | null = null;
     let creditsReserved = false;
     try {
 
       if (!DISABLE_CREDIT_CHECK) {
-        if (!user?.id) {
-          setNetworkError(
-            localize(
-              'Vous devez être connecté pour utiliser vos crédits.',
-              'You must be logged in to use credits.'
-            )
-          );
+        const hasCredits = await ensureCreditsAvailable(
+          requiredCredits,
+          setNetworkError,
+          {
+            fr: `Crédits insuffisants pour lancer ce scan. ${requiredCredits} crédits requis.`,
+            en: `Not enough credits to launch this scan. ${requiredCredits} credits required.`,
+          }
+        );
+        if (!hasCredits) {
           setNetworkLoading(false);
           return;
         }
 
-        const { data, error } = await supabase
-          .from('credits')
-          .select('used_credits, total_credits')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (error || !data) {
-          setNetworkError(
-            localize('Impossible de vérifier vos crédits.', 'Unable to verify your credits.')
-          );
-          setNetworkLoading(false);
-          return;
-        }
-
-        const total = data.total_credits ?? 0;
-        const used = data.used_credits ?? 0;
-        const remaining = total - used;
-        if (remaining < requiredCredits) {
-          setNetworkError(
-            localize(
-              `Crédits insuffisants pour lancer ce scan. ${requiredCredits} crédits requis.`,
-              `Not enough credits to launch this scan. ${requiredCredits} credits required.`
-            )
-          );
-          setNetworkLoading(false);
-          return;
-        }
-
-        const newUsed = used + requiredCredits;
-        const { error: reserveError } = await supabase
-          .from('credits')
-          .update({ used_credits: newUsed, updated_at: new Date().toISOString() })
-          .eq('user_id', user.id);
-
-        if (reserveError) {
+        const reserved = await adjustCredits(requiredCredits);
+        if (!reserved) {
           setNetworkError(localize('Impossible de réserver vos crédits.', 'Unable to reserve your credits.'));
           setNetworkLoading(false);
           return;
         }
 
-        previousUsed = used;
         creditsReserved = true;
-        if (typeof refreshCredits === 'function') {
-          refreshCredits().catch((err) => console.error('Erreur refresh credits:', err));
-        }
       }
 
       const normalizedUrl = normalizeSingleUrl(siteUrl);
@@ -269,14 +395,8 @@ export default function ScanPage() {
 
       if (!response.ok) {
         const text = await response.text();
-        if (!DISABLE_CREDIT_CHECK && creditsReserved && previousUsed !== null && user?.id) {
-          await supabase
-            .from('credits')
-            .update({ used_credits: previousUsed, updated_at: new Date().toISOString() })
-            .eq('user_id', user.id);
-          if (typeof refreshCredits === 'function') {
-            refreshCredits().catch((err) => console.error('Erreur refresh credits:', err));
-          }
+        if (!DISABLE_CREDIT_CHECK && creditsReserved && user?.id) {
+          await adjustCredits(-requiredCredits);
           creditsReserved = false;
         }
         throw new Error(text || localize('Échec du scan réseau.', 'Network scan failed.'));
@@ -288,14 +408,8 @@ export default function ScanPage() {
       setNetworkDialogTarget(normalizedUrl);
       setNetworkDialogOpen(true);
     } catch (err) {
-      if (!DISABLE_CREDIT_CHECK && creditsReserved && previousUsed !== null && user?.id) {
-        await supabase
-          .from('credits')
-          .update({ used_credits: previousUsed, updated_at: new Date().toISOString() })
-          .eq('user_id', user.id);
-        if (typeof refreshCredits === 'function') {
-          refreshCredits().catch((refreshErr) => console.error('Erreur refresh credits:', refreshErr));
-        }
+      if (!DISABLE_CREDIT_CHECK && creditsReserved && user?.id) {
+        await adjustCredits(-requiredCredits);
         creditsReserved = false;
       }
       setNetworkError(
@@ -319,16 +433,16 @@ export default function ScanPage() {
 
     supabase
       .from('subscriptions')
-      .select('plan_type')
+      .select('plan_type, status, started_at, created_at, updated_at, expires_at')
       .eq('user_id', user.id)
-      .maybeSingle()
       .then(({ data, error }) => {
         if (error) {
           console.error('Impossible de récupérer le plan:', error);
           return;
         }
-        if (data?.plan_type) {
-          setPlanType(data.plan_type);
+        const best = pickBestSubscription(data as SubscriptionRow[]);
+        if (best?.plan_type) {
+          setPlanType(best.plan_type);
         }
       });
   }, [user, profile?.role]);
@@ -415,56 +529,29 @@ export default function ScanPage() {
 
       const perScanCost = scanType === 'complete' ? FULL_SCAN_CREDIT_COST : LIGHT_SCAN_CREDIT_COST;
       const totalCost = normalizedUrls.length * perScanCost;
-      let creditsData = { remaining_credits: 0, used_credits: 0, total_credits: 0 };
 
       if (!DISABLE_CREDIT_CHECK) {
-        const { data } = await supabase
-          .from('credits')
-          .select('used_credits, total_credits')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        creditsData = data
-          ? {
-              remaining_credits: (data.total_credits ?? 0) - (data.used_credits ?? 0),
-              used_credits: data.used_credits ?? 0,
-              total_credits: data.total_credits ?? 0,
-            }
-          : { remaining_credits: 0, used_credits: 0, total_credits: 0 };
-
-        if (!creditsData || (creditsData.remaining_credits || 0) < totalCost) {
-          setError(
-            localize(
-              `Crédits insuffisants pour lancer cette série de scans. ${totalCost} crédits requis.`,
-              `Not enough credits to launch this batch of scans. ${totalCost} credits required.`
-            )
-          );
+        const hasCredits = await ensureCreditsAvailable(
+          totalCost,
+          setError,
+          {
+            fr: `Crédits insuffisants pour lancer cette série de scans. ${totalCost} crédits requis.`,
+            en: `Not enough credits to launch this batch of scans. ${totalCost} credits required.`,
+          }
+        );
+        if (!hasCredits) {
           setLoading(false);
           stopProgress(false);
           return;
         }
 
-        const newUsed = (creditsData.used_credits ?? 0) + totalCost;
-        const { error: reserveError } = await supabase
-          .from('credits')
-          .update({
-            used_credits: newUsed,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('user_id', user.id);
-
-        if (reserveError) {
-          console.error('Erreur réservation crédits:', reserveError);
+        const reserved = await adjustCredits(totalCost);
+        if (!reserved) {
+          console.error('Erreur réservation crédits');
           setError(localize('Impossible de réserver vos crédits.', 'Unable to reserve your credits.'));
           setLoading(false);
           stopProgress(false);
           return;
-        }
-
-        creditsData.used_credits = newUsed;
-        creditsData.remaining_credits = (creditsData.total_credits ?? 0) - newUsed;
-        if (typeof refreshCredits === 'function') {
-          refreshCredits().catch((err) => console.error('Erreur refresh credits:', err));
         }
       }
 
@@ -623,6 +710,36 @@ export default function ScanPage() {
     if (!rows.length) return rows;
     const openRows = rows.filter((row) => row.state.toLowerCase() !== 'closed');
     return openRows.length ? openRows : rows;
+  };
+
+  const adjustCredits = async (amount: number) => {
+    if (DISABLE_CREDIT_CHECK || !user?.id || amount === 0) {
+      return false;
+    }
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      const response = await fetch('/service/credits/consume', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify({ amount }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('Erreur credits consume:', text || response.statusText);
+        return false;
+      }
+      if (typeof refreshCredits === 'function') {
+        refreshCredits().catch((err) => console.error('Erreur refresh credits:', err));
+      }
+      return true;
+    } catch (err) {
+      console.error('Erreur credits consume:', err);
+      return false;
+    }
   };
   const formatCertInfo = (value: any) => {
     if (value === null || value === undefined || value === '') return '—';

@@ -119,17 +119,9 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
 
       const message = String(error.message || '');
       if (message.toLowerCase().includes('invalid login credentials')) {
+        setError(localize('Email ou mot de passe incorrect.', 'Your credentials are incorrect.'));
         setLoading(false);
-        const result = await sendOtp('email', { silent: true });
-        if (result.ok) {
-          setError(
-            localize(
-              'Si votre compte est en attente de vérification, un code a été envoyé par email.',
-              'Your account waiting verification, a code has been sent by email.'
-            )
-          );
-          return;
-        }
+        return;
       }
 
       setError(error.message || localize("Erreur lors de la connexion", 'Login error'));

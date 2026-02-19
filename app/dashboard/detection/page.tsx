@@ -71,23 +71,66 @@ export default function DashboardDetectionPage() {
       return false;
     }
 
+    const syncCredits = async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
+        const response = await fetch('/service/credits/sync', {
+          method: 'POST',
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        });
+        if (!response.ok) {
+          return null;
+        }
+        const payload = await response.json().catch(() => null);
+        return payload?.credits ?? null;
+      } catch (syncErr) {
+        console.error('Erreur sync crédits détection:', syncErr);
+        return null;
+      }
+    };
+
     const { data, error } = await supabase
       .from('credits')
-      .select('total_credits, used_credits')
+      .select('id, total_credits, used_credits, updated_at, created_at')
       .eq('user_id', user.id)
+      .order('updated_at', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (error) {
       console.error('Erreur lecture crédits détection:', error);
-      setError(language === 'fr' ? 'Impossible de vérifier vos crédits.' : 'Unable to verify your credits.');
-      return false;
+      const synced = await syncCredits();
+      if (!synced) {
+        setError(language === 'fr' ? 'Impossible de vérifier vos crédits.' : 'Unable to verify your credits.');
+        return false;
+      }
     }
 
-    const total = data?.total_credits ?? 0;
-    const used = data?.used_credits ?? 0;
-    const remaining = total - used;
+    let total = data?.total_credits ?? 0;
+    let used = data?.used_credits ?? 0;
+    let remaining = total - used;
 
     if (remaining < count) {
+      const synced = await syncCredits();
+      if (synced && Number.isFinite(synced.total) && Number.isFinite(synced.used)) {
+        const { data: refreshed } = await supabase
+          .from('credits')
+          .select('id, total_credits, used_credits, updated_at, created_at')
+          .eq('user_id', user.id)
+          .order('updated_at', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        total = refreshed?.total_credits ?? synced.total ?? 0;
+        used = refreshed?.used_credits ?? synced.used ?? 0;
+        remaining = total - used;
+        if (remaining >= count) {
+          return true;
+        }
+      }
+
       setError(language === 'fr' ? 'Crédits insuffisants pour lancer ces détections.' : 'Not enough credits to start these detections.');
       return false;
     }
@@ -98,29 +141,24 @@ export default function DashboardDetectionPage() {
   const consumeCredits = async (count: number) => {
     if (DISABLE_CREDIT_CHECK || count <= 0 || !user?.id) return;
     try {
-      const { data, error } = await supabase
-        .from('credits')
-        .select('used_credits')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      const response = await fetch('/service/credits/consume', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify({ amount: count }),
+      });
 
-      if (error) {
-        console.error('Erreur lecture crédits après détection:', error);
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('Erreur consommation crédits détection:', text || response.statusText);
         return;
       }
 
-      const currentUsed = data?.used_credits ?? 0;
-      const { error: updateError } = await supabase
-        .from('credits')
-        .update({
-          used_credits: currentUsed + count,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id);
-
-      if (updateError) {
-        console.error('Erreur mise à jour crédits après détection:', updateError);
-      } else if (typeof refreshCredits === 'function') {
+      if (typeof refreshCredits === 'function') {
         refreshCredits().catch((err) => console.error('Erreur refresh credits detection:', err));
       }
     } catch (err) {

@@ -57,6 +57,66 @@ type PaymentHistoryItem = {
   expires_at?: string | null;
 };
 
+type SubscriptionRow = {
+  id?: string | null;
+  plan_type?: string | null;
+  status?: string | null;
+  credits_limit?: number | null;
+  started_at?: string | null;
+  expires_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type CreditsRow = {
+  id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+const toMs = (value?: string | null) => {
+  if (!value) return 0;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+};
+
+const pickLatestByDate = <T extends { created_at?: string | null; updated_at?: string | null }>(
+  rows: T[] | null | undefined
+): T | null => {
+  if (!rows || rows.length === 0) return null;
+  return rows.reduce<T | null>((best, row) => {
+    if (!best) return row;
+    const bestMs = Math.max(toMs(best.updated_at), toMs(best.created_at));
+    const rowMs = Math.max(toMs(row.updated_at), toMs(row.created_at));
+    return rowMs >= bestMs ? row : best;
+  }, null);
+};
+
+const getSubscriptionRank = (row: SubscriptionRow, nowMs: number) => {
+  if (row.status === 'active') return 3;
+  if (row.status === 'cancelled') {
+    const expiresAt = toMs(row.expires_at);
+    if (expiresAt > nowMs) return 2;
+  }
+  return 1;
+};
+
+const pickBestSubscription = (rows: SubscriptionRow[] | null | undefined): SubscriptionRow | null => {
+  if (!rows || rows.length === 0) return null;
+  const nowMs = Date.now();
+  return rows.reduce<SubscriptionRow | null>((best, row) => {
+    if (!best) return row;
+    const bestStatusRank = getSubscriptionRank(best, nowMs);
+    const rowStatusRank = getSubscriptionRank(row, nowMs);
+    if (rowStatusRank !== bestStatusRank) {
+      return rowStatusRank > bestStatusRank ? row : best;
+    }
+    const bestTime = Math.max(toMs(best.started_at), toMs(best.updated_at), toMs(best.created_at));
+    const rowTime = Math.max(toMs(row.started_at), toMs(row.updated_at), toMs(row.created_at));
+    return rowTime >= bestTime ? row : best;
+  }, null);
+};
+
 function SubscriptionPageContent() {
   const { user } = useAuth();
   const { choose } = useLanguage();
@@ -149,16 +209,15 @@ function SubscriptionPageContent() {
       const cycleEnd = getNextCycleEndDate(subscription);
       const effectiveExpiry = cycleEnd ?? new Date(now.getTime() + CYCLE_DURATION_MS);
 
-      const { data, error } = await supabase
+      const { data: updatedRows, error } = await supabase
         .from('subscriptions')
         .update({
           status: 'cancelled',
           expires_at: effectiveExpiry.toISOString(),
           updated_at: nowIso,
         })
-        .eq('user_id', user.id)
-        .select('*')
-        .maybeSingle();
+        .eq(subscription.id ? 'id' : 'user_id', subscription.id ?? user.id)
+        .select('*');
 
       if (error) throw error;
 
@@ -175,8 +234,9 @@ function SubscriptionPageContent() {
         severity: 'info',
       });
 
-      if (data) {
-        setSubscription(data);
+      const updated = pickBestSubscription(updatedRows as SubscriptionRow[]);
+      if (updated) {
+        setSubscription(updated as Subscription);
       }
       setStatusMessage({
         type: 'success',
@@ -481,7 +541,7 @@ function SubscriptionPageContent() {
     const now = new Date();
     const nowIso = now.toISOString();
 
-    const { data, error } = await supabase
+    const { data: updatedRows, error } = await supabase
       .from('subscriptions')
       .update({
         plan_type: 'free',
@@ -491,9 +551,8 @@ function SubscriptionPageContent() {
         expires_at: null,
         updated_at: nowIso,
       })
-      .eq('user_id', user.id)
-      .select('*')
-      .maybeSingle();
+      .eq(record.id ? 'id' : 'user_id', record.id ?? user.id)
+      .select('*');
 
     if (error) {
       console.error('Error finalizing cancellation:', error);
@@ -514,22 +573,27 @@ function SubscriptionPageContent() {
       ),
     });
 
-    return data ?? record;
+    const updated = pickBestSubscription(updatedRows as SubscriptionRow[]);
+    return (updated ?? record) as Subscription;
   };
 
   const loadSubscription = async () => {
     if (!user) return;
 
     try {
-      const { data } = await supabase
+      const { data: subscriptionRows, error } = await supabase
         .from('subscriptions')
         .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
+        .eq('user_id', user.id);
 
-      if (data) {
-        const normalized = await finalizeCancellationIfNeeded(data);
-        setSubscription(normalized ?? data);
+      if (error) throw error;
+
+      const best = pickBestSubscription(subscriptionRows as SubscriptionRow[]);
+      if (best) {
+        const normalized = await finalizeCancellationIfNeeded(best as Subscription);
+        setSubscription((normalized ?? best) as Subscription);
+      } else {
+        setSubscription(null);
       }
     } catch (error) {
       console.error('Error loading subscription:', error);
@@ -542,15 +606,16 @@ function SubscriptionPageContent() {
     if (!user) return;
 
     const {
-      data: existingCredits,
+      data: existingCreditsRows,
       error: fetchCreditsError,
     } = await supabase
       .from('credits')
-      .select('id')
-      .eq('user_id', user.id)
-      .maybeSingle();
+      .select('id, created_at, updated_at')
+      .eq('user_id', user.id);
 
     if (fetchCreditsError) throw fetchCreditsError;
+
+    const existingCredits = pickLatestByDate(existingCreditsRows as CreditsRow[]);
 
     const creditsPayload = {
       total_credits: creditsLimit,
@@ -559,11 +624,11 @@ function SubscriptionPageContent() {
       updated_at: nowIso,
     };
 
-    if (existingCredits) {
+    if (existingCredits?.id) {
       const { error: creditsError } = await supabase
         .from('credits')
         .update(creditsPayload)
-        .eq('user_id', user.id);
+        .eq('id', existingCredits.id);
 
       if (creditsError) throw creditsError;
     } else {
@@ -601,17 +666,18 @@ function SubscriptionPageContent() {
       const nowIso = now.toISOString();
 
       const {
-        data: existingSubscription,
+        data: subscriptionRows,
         error: fetchSubscriptionError,
       } = await supabase
         .from('subscriptions')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
+        .select('id, status, started_at, created_at, updated_at, expires_at')
+        .eq('user_id', user.id);
 
       if (fetchSubscriptionError) throw fetchSubscriptionError;
 
-      if (existingSubscription) {
+      const existingSubscription = pickBestSubscription(subscriptionRows as SubscriptionRow[]);
+
+      if (existingSubscription?.id) {
         const { error: subscriptionError } = await supabase
           .from('subscriptions')
           .update({
@@ -622,7 +688,7 @@ function SubscriptionPageContent() {
             expires_at: expiresAt,
             updated_at: nowIso,
           })
-          .eq('user_id', user.id);
+          .eq('id', existingSubscription.id);
 
         if (subscriptionError) throw subscriptionError;
       } else {

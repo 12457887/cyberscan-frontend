@@ -93,8 +93,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const { data } = await supabase
         .from("credits")
-        .select("total_credits, used_credits, remaining_credits")
+        .select("total_credits, used_credits, remaining_credits, updated_at, created_at")
         .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (data) {
