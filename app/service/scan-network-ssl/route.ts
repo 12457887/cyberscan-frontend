@@ -1,5 +1,7 @@
 // Proxy route: forwards POST /service/scan-network-ssl to the backend FastAPI service
 
+export const maxDuration = 300;
+
 export async function POST(req: Request) {
   try {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
@@ -20,6 +22,7 @@ export async function POST(req: Request) {
       method: 'POST',
       headers,
       body,
+      signal: AbortSignal.timeout(290_000),
     });
 
     const text = await res.text();
