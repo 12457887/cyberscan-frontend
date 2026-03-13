@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase, Scan, Vulnerability } from '@/lib/supabase';
 import { formatDateDMY } from '@/lib/date';
-import { CheckCircle2, Download, Filter, Loader2 } from 'lucide-react';
+import { CheckCircle2, Download, Filter, Loader2, Trash2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   DropdownMenu,
@@ -112,6 +112,8 @@ export default function ReportsPage() {
   const [rescanLoadingId, setRescanLoadingId] = useState<string | null>(null);
   const [rescanMessage, setRescanMessage] = useState<string | null>(null);
   const [rescanError, setRescanError] = useState<string | null>(null);
+  const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
+  const [deleteConfirmScan, setDeleteConfirmScan] = useState<Scan | null>(null);
   const [pendingFullScanIds, setPendingFullScanIds] = useState<string[]>([]);
   const [readyFullScanIds, setReadyFullScanIds] = useState<string[]>([]);
   const [networkDialogOpen, setNetworkDialogOpen] = useState(false);
@@ -634,6 +636,28 @@ export default function ReportsPage() {
     }
   };
 
+  const handleDelete = async (scan: Scan) => {
+    setDeleteLoadingId(scan.id);
+    setDeleteConfirmScan(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      const res = await fetch(`/service/scan-delete/${scan.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+      });
+      if (!res.ok) throw new Error(`Erreur ${res.status}`);
+      await loadReports();
+    } catch (err: any) {
+      console.error('Erreur suppression:', err);
+    } finally {
+      setDeleteLoadingId(null);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
@@ -942,6 +966,31 @@ const handleOpenReport = (scan: Scan) => {
           </div>
         )}
 
+        <Dialog open={!!deleteConfirmScan} onOpenChange={(open) => { if (!open) setDeleteConfirmScan(null); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{localize('Supprimer ce scan ?', 'Delete this scan?')}</DialogTitle>
+              <DialogDescription>
+                {deleteConfirmScan?.site_url}
+                <br />
+                {localize('Cette action est irréversible.', 'This action cannot be undone.')}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="outline" onClick={() => setDeleteConfirmScan(null)}>
+                {localize('Annuler', 'Cancel')}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => deleteConfirmScan && handleDelete(deleteConfirmScan)}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                {localize('Supprimer', 'Delete')}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={networkDialogOpen} onOpenChange={setNetworkDialogOpen}>
           <DialogContent className="sm:max-w-4xl">
             <DialogHeader>
@@ -1093,6 +1142,7 @@ const handleOpenReport = (scan: Scan) => {
                     <TableHead>{localize('Niveau de risque', 'Risk level')}</TableHead>
                     <TableHead>{localize('Export', 'Export')}</TableHead>
                     <TableHead>{localize('Relancer', 'Rescan')}</TableHead>
+                    <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1157,6 +1207,21 @@ const handleOpenReport = (scan: Scan) => {
                             </span>
                           ) : (
                             localize('Relancer', 'Rescan')
+                          )}
+                        </Button>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => setDeleteConfirmScan(scan)}
+                          disabled={deleteLoadingId === scan.id}
+                        >
+                          {deleteLoadingId === scan.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
                           )}
                         </Button>
                       </TableCell>
