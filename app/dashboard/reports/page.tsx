@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase, Scan, Vulnerability } from '@/lib/supabase';
 import { formatDateDMY } from '@/lib/date';
-import { CheckCircle2, Download, Filter, Loader2, Trash2 } from 'lucide-react';
+import { CheckCircle2, Download, Filter, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   DropdownMenu,
@@ -1130,34 +1130,40 @@ const handleOpenReport = (scan: Scan) => {
                 {localize('Vision synthétique de vos derniers scans', 'Summary view of your latest scans')}
               </CardDescription>
             </CardHeader>
-            <CardContent className="overflow-x-auto">
-              <Table>
+            <CardContent className="p-0">
+              <Table className="text-sm">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>URL</TableHead>
-                    <TableHead>{localize('Type de site', 'Site type')}</TableHead>
-                    <TableHead>{localize('Statut', 'Status')}</TableHead>
-                    <TableHead>{localize('Date', 'Date')}</TableHead>
-                    <TableHead className="text-center">{localize('Vulnérabilités', 'Vulnerabilities')}</TableHead>
-                    <TableHead>{localize('Niveau de risque', 'Risk level')}</TableHead>
-                    <TableHead>{localize('Export', 'Export')}</TableHead>
-                    <TableHead>{localize('Relancer', 'Rescan')}</TableHead>
+                    <TableHead className="pl-4">URL</TableHead>
+                    <TableHead className="whitespace-nowrap">{localize('Site', 'Site')}</TableHead>
+                    <TableHead className="whitespace-nowrap">{localize('Scan', 'Scan')}</TableHead>
+                    <TableHead className="whitespace-nowrap">{localize('Statut', 'Status')}</TableHead>
+                    <TableHead className="whitespace-nowrap">{localize('Date', 'Date')}</TableHead>
+                    <TableHead className="text-center whitespace-nowrap">{localize('Vulnér.', 'Vulns')}</TableHead>
+                    <TableHead className="whitespace-nowrap">{localize('Risque', 'Risk')}</TableHead>
+                    <TableHead className="whitespace-nowrap">{localize('Export', 'Export')}</TableHead>
+                    <TableHead></TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredScans.map((scan) => (
                     <TableRow key={`table-${scan.id}`}>
-                      <TableCell className="text-sm text-slate-900 truncate max-w-[220px]">
+                      <TableCell className="pl-4 text-slate-900 truncate max-w-[160px]">
                         {scan.site_url}
                       </TableCell>
-                      <TableCell className="capitalize">{scan.cms_type || localize('Inconnu', 'Unknown')}</TableCell>
-                      <TableCell>{getStatusBadge(scan.status)}</TableCell>
-                      <TableCell>{formatDateTime(scan.created_at)}</TableCell>
-                      <TableCell className="text-center font-semibold">
+                      <TableCell className="capitalize whitespace-nowrap">{scan.cms_type || localize('Inconnu', 'Unknown')}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <Badge variant={scan.scan_type === 'complete' ? 'default' : 'secondary'} className="capitalize text-xs px-1.5 py-0">
+                          {scan.scan_type === 'complete' ? 'Complete' : 'Light'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{getStatusBadge(scan.status)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatDateTime(scan.created_at)}</TableCell>
+                      <TableCell className="text-center font-semibold whitespace-nowrap">
                         {getVulnerabilityTotal(scan)}
                       </TableCell>
-                      <TableCell>{getRiskBadge(scan.risk_level)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{getRiskBadge(scan.risk_level)}</TableCell>
                       <TableCell>
                         {canDownloadReport(scan) ? (
                           <DropdownMenu>
@@ -1195,18 +1201,17 @@ const handleOpenReport = (scan: Scan) => {
                       </TableCell>
                       <TableCell>
                         <Button
-                          size="sm"
+                          size="icon"
                           variant="ghost"
+                          title={localize('Relancer', 'Rescan')}
                           onClick={() => handleRescan(scan)}
                           disabled={rescanLoadingId === scan.id}
+                          className="h-8 w-8"
                         >
                           {rescanLoadingId === scan.id ? (
-                            <span className="flex items-center gap-1">
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              {localize('Relance...', 'Rescanning...')}
-                            </span>
+                            <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
-                            localize('Relancer', 'Rescan')
+                            <RefreshCw className="h-4 w-4" />
                           )}
                         </Button>
                       </TableCell>
