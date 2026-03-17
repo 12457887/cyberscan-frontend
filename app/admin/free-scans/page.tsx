@@ -205,17 +205,15 @@ export default function FreeScansAdminPage() {
       medium: 'text-amber-600',
       low: 'text-emerald-600',
     };
+    const items = order.filter((sev) => (counts[sev] ?? 0) > 0);
+    if (items.length === 0) return <span className="text-slate-300 text-sm">—</span>;
     return (
-      <div className="flex items-center gap-2 flex-wrap">
-        {order.map((sev) => {
-          const val = counts[sev] ?? 0;
-          if (val === 0) return null;
-          return (
-            <span key={sev} className={`text-xs font-semibold ${colors[sev]}`}>
-              {severityLetter(sev)}<span className="text-slate-500 font-normal">:{val}</span>
-            </span>
-          );
-        })}
+      <div className="grid grid-cols-[auto_auto] justify-start gap-x-3 gap-y-0.5">
+        {items.map((sev) => (
+          <span key={sev} className={`text-xs font-semibold tabular-nums ${colors[sev]}`}>
+            {severityLetter(sev)}<span className="text-slate-400 font-normal text-[11px]">:{counts[sev]}</span>
+          </span>
+        ))}
       </div>
     );
   };
@@ -389,15 +387,15 @@ export default function FreeScansAdminPage() {
               <div className="overflow-x-auto">
                 <table className="w-full table-fixed text-sm border-separate border-spacing-0">
                   <colgroup>
+                    <col className="w-[11%]" />
+                    <col className="w-[19%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[12%]" />
                     <col className="w-[9%]" />
-                    <col className="w-[20%]" />
-                    <col className="w-[14%]" />
-                    <col className="w-[10%]" />
-                    <col className="w-[10%]" />
-                    <col className="w-[8%]" />
+                    <col className="w-[6%]" />
                     <col className="w-[5%]" />
-                    <col className="w-[4%]" />
-                    <col className="w-[20%]" />
+                    <col className="w-[14%]" />
                   </colgroup>
                   <thead>
                     <tr className="bg-slate-50">
@@ -412,7 +410,7 @@ export default function FreeScansAdminPage() {
                         localize('PDF', 'PDF'),
                         localize('Vulnérabilités', 'Vulnerabilities'),
                       ].map((h, i) => (
-                        <th key={i} className={`px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-200 text-left ${i === 7 ? 'text-center' : ''}`}>
+                        <th key={i} className={`px-2 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-200 text-left ${i === 7 ? 'text-center' : ''}`}>
                           {h}
                         </th>
                       ))}
@@ -424,7 +422,7 @@ export default function FreeScansAdminPage() {
                         key={scan.id}
                         className="border-b border-slate-100 odd:bg-white even:bg-slate-50/30 hover:bg-emerald-50/20 transition-colors"
                       >
-                        <td className="px-3 py-2.5 whitespace-nowrap tabular-nums">
+                        <td className="px-2 py-2.5 whitespace-nowrap tabular-nums">
                           {(() => {
                             const date = new Date(scan.created_at);
                             return (
@@ -435,19 +433,19 @@ export default function FreeScansAdminPage() {
                             );
                           })()}
                         </td>
-                        <td className="px-3 py-2.5">
+                        <td className="px-2 py-2.5">
                           <a href={normalizeDisplayUrl(scan.url)} target="_blank" rel="noreferrer" title={scan.url} className="text-sm font-semibold text-blue-600 hover:underline truncate block">
                             {normalizeDisplayUrl(scan.url)}
                           </a>
                           {scan.analyzer_domain && <p className="text-xs text-slate-400 truncate">{scan.analyzer_domain}</p>}
                         </td>
-                        <td className="px-3 py-2.5 text-sm text-slate-600 truncate">
+                        <td className="px-2 py-2.5 text-sm text-slate-600 truncate">
                           {scan.email
                             ? <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-purple-400 shrink-0" /><span className="truncate">{scan.email}</span></span>
                             : <span className="text-slate-300">—</span>}
                         </td>
-                        <td className="px-3 py-2.5 font-mono text-xs text-slate-600 truncate">{scan.ip_address || '—'}</td>
-                        <td className="px-3 py-2.5 text-xs text-slate-600 truncate">
+                        <td className="px-2 py-2.5 font-mono text-xs text-slate-600 truncate">{scan.ip_address || '—'}</td>
+                        <td className="px-2 py-2.5 text-xs text-slate-600 truncate">
                           {(() => {
                             const trimmedIp = (scan.ip_address || '').trim();
                             if (!trimmedIp) return '—';
@@ -458,13 +456,13 @@ export default function FreeScansAdminPage() {
                             return location || '—';
                           })()}
                         </td>
-                        <td className="px-3 py-2.5 text-sm text-slate-600 truncate">
+                        <td className="px-2 py-2.5 text-slate-700 truncate">
                           {scan.cms_label
-                            ? <Badge variant="outline" className="text-xs bg-slate-50 border-slate-200 font-medium">{scan.cms_label}</Badge>
+                            ? <span className="text-xs font-medium truncate">{scan.cms_label}</span>
                             : <span className="text-slate-300">—</span>}
                         </td>
-                        <td className="px-3 py-2.5">{renderRiskBadge(scan.risk_level)}</td>
-                        <td className="px-3 py-2.5 text-center">
+                        <td className="px-2 py-2.5">{renderRiskBadge(scan.risk_level)}</td>
+                        <td className="px-2 py-2.5 text-center">
                           {(() => {
                             const reportId = scan.mongo_report_id || scan.scan_id;
                             if (!reportId) return <span className="text-slate-300 text-sm">—</span>;
@@ -481,7 +479,7 @@ export default function FreeScansAdminPage() {
                             );
                           })()}
                         </td>
-                        <td className="px-3 py-2.5">
+                        <td className="px-2 py-2.5">
                           {renderSeverityCounts(scan.severity_counts)}
                         </td>
                       </tr>

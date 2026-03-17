@@ -80,12 +80,9 @@ export default function AdminLogsPage() {
 
   const renderModeBadge = (mode: string) => {
     const normalized = (mode || '').toLowerCase();
-    const label = normalized ? normalized.toUpperCase() : '—';
-    const color = {
-      complete: 'bg-blue-100 text-blue-700 border-blue-200',
-      light: 'bg-slate-100 text-slate-600 border-slate-200',
-    }[normalized];
-    return <Badge variant="outline" className={`text-xs font-semibold tracking-wide ${color ?? 'bg-slate-100 text-slate-600'}`}>{label}</Badge>;
+    if (!normalized) return <span className="text-slate-300 text-xs">—</span>;
+    const color = normalized === 'complete' ? 'text-blue-600' : 'text-slate-500';
+    return <span className={`text-xs font-medium ${color}`}>{normalized}</span>;
   };
 
   useEffect(() => {
@@ -457,7 +454,7 @@ export default function AdminLogsPage() {
                             onClick={() => handleDelete(log)}
                             disabled={deletingId === log.id}
                             title={localize('Supprimer ce log', 'Delete this log')}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-40 transition-colors opacity-0 group-hover:opacity-100"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 transition-colors"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
