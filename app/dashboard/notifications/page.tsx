@@ -35,17 +35,24 @@ export default function NotificationsPage() {
     }
   }, [user]);
 
+  const getAccessToken = async (): Promise<string | undefined> => {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token;
+  };
+
   const loadNotifications = async () => {
     if (!user) return;
 
     try {
-      const { data } = await supabase
-        .from('alerts')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (data) setAlerts(data);
+      const token = await getAccessToken();
+      const res = await fetch('/api/alerts', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAlerts(data);
+      }
     } catch (error) {
       console.error('Error loading notifications:', error);
     } finally {
@@ -55,12 +62,12 @@ export default function NotificationsPage() {
 
   const handleMarkAsRead = async (alertId: string) => {
     try {
-      await supabase
-        .from('alerts')
-        .update({ is_read: true })
-        .eq('id', alertId);
-
-      setAlerts(alerts.map(alert =>
+      const token = await getAccessToken();
+      await fetch(`/api/alerts/${alertId}/read`, {
+        method: 'PATCH',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      setAlerts(prev => prev.map(alert =>
         alert.id === alertId ? { ...alert, is_read: true } : alert
       ));
     } catch (error) {
@@ -72,13 +79,12 @@ export default function NotificationsPage() {
     if (!user) return;
 
     try {
-      await supabase
-        .from('alerts')
-        .update({ is_read: true })
-        .eq('user_id', user.id)
-        .eq('is_read', false);
-
-      setAlerts(alerts.map(alert => ({ ...alert, is_read: true })));
+      const token = await getAccessToken();
+      await fetch('/api/alerts/read-all', {
+        method: 'PATCH',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      setAlerts(prev => prev.map(alert => ({ ...alert, is_read: true })));
     } catch (error) {
       console.error('Error marking all as read:', error);
     }
@@ -86,12 +92,14 @@ export default function NotificationsPage() {
 
   const handleDelete = async (alertId: string) => {
     try {
-      await supabase
-        .from('alerts')
-        .delete()
-        .eq('id', alertId);
-
-      setAlerts(alerts.filter(alert => alert.id !== alertId));
+      const token = await getAccessToken();
+      const res = await fetch(`/api/alerts/${alertId}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        setAlerts(prev => prev.filter(alert => alert.id !== alertId));
+      }
     } catch (error) {
       console.error('Error deleting alert:', error);
     }

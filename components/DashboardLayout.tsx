@@ -22,6 +22,7 @@ import {
   ScrollText,
   Layers,
   Database,
+  CalendarClock,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Logo } from '@/components/Logo';
@@ -29,12 +30,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useSubscriptionPlan } from '@/hooks/use-subscription-plan';
 import { Language, useLanguage } from '@/contexts/LanguageContext';
+import { supabase } from '@/lib/supabase';
 
 const NAV_ITEMS = [
   { key: 'nav.dashboard', href: '/dashboard', icon: Home },
   { key: 'nav.newScan', href: '/dashboard/scan', icon: Scan },
   { key: 'nav.checkDomain', href: '/dashboard/check-domain', icon: Database },
   { key: 'nav.reports', href: '/dashboard/reports', icon: FileText },
+  { key: 'nav.scheduledScans', href: '/dashboard/scheduled-scans', icon: CalendarClock },
   { key: 'nav.detection', href: '/dashboard/detection', icon: Shield },
   { key: 'nav.subscription', href: '/dashboard/subscription', icon: CreditCard },
   { key: 'nav.profile', href: '/dashboard/profile', icon: User },
@@ -55,6 +58,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const { plan } = useSubscriptionPlan();
   const { t, language, setLanguage, choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
@@ -72,6 +76,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.push('/login');
     }
   }, [user, loading, router]);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchUnreadCount = async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        const res = await fetch('/api/alerts', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const alerts = await res.json();
+          setUnreadCount(alerts.filter((a: { is_read: boolean }) => !a.is_read).length);
+        }
+      } catch {}
+    };
+    fetchUnreadCount();
+  }, [user]);
 
   const creditDisplay =
     credits
@@ -156,9 +179,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <option value="en">{t('language.short.en')}</option>
                 </select>
               </div>
-              <Button variant="ghost" size="icon" asChild aria-label={t('common.notifications')}>
+              <Button variant="ghost" size="icon" asChild aria-label={t('common.notifications')} className="relative">
                 <Link href="/dashboard/notifications">
                   <Bell className="w-5 h-5 text-white" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
                 </Link>
               </Button>
               <div className="flex flex-col items-end text-sm text-slate-200">

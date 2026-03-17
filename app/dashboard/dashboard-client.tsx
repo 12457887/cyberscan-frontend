@@ -97,7 +97,7 @@ const buildTrendBase = (
 };
 
 export default function DashboardPageClient() {
-  const { user, profile } = useAuth();
+  const { user, profile, credits: authCredits } = useAuth();
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const locale = choose({ fr: 'fr-FR', en: 'en-US' });
@@ -149,7 +149,6 @@ export default function DashboardPageClient() {
   const searchParams = useSearchParams();
   const activeSection = searchParams?.get('section') ?? 'overview';
   const { plan, loading: planLoading } = useSubscriptionPlan();
-  const [credits, setCredits] = useState<Credits | null>(null);
   const [scans, setScans] = useState<Scan[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [vulnerabilityTrend, setVulnerabilityTrend] = useState<VulnerabilityTrendPoint[]>([]);
@@ -286,15 +285,12 @@ export default function DashboardPageClient() {
             .limit(200)
         : Promise.resolve({ data: [], error: null });
 
-      const [creditsRes, scanHistoryRes, alertsRes, trendScansRes, freeScansRes] = await Promise.all([
-        supabase.from('credits').select('*').eq('user_id', user.id).maybeSingle(),
+      const [scanHistoryRes, alertsRes, trendScansRes, freeScansRes] = await Promise.all([
         scanHistoryQuery,
         supabase.from('alerts').select('*').eq('user_id', user.id).eq('is_read', false).limit(5),
         trendScansQuery,
         freeScansPromise,
       ]);
-
-      if (creditsRes.data) setCredits(creditsRes.data);
       const scansData = scanHistoryRes.data || [];
       const trendScans = (trendScansRes.data || []) as TrendScan[];
       const freeScans = (freeScansRes.data || []) as FreeScanTrendRow[];
@@ -597,9 +593,9 @@ export default function DashboardPageClient() {
 
   const activeScans = scans.filter(s => s.status === 'in_progress' || s.status === 'pending').length;
   const unreadAlerts = alerts.length;
-  const totalCredits = credits?.total_credits ?? 0;
-  const remainingCredits = credits?.remaining_credits ?? 0;
-  const usedCredits = credits?.used_credits ?? 0;
+  const totalCredits = authCredits?.total ?? 0;
+  const usedCredits = authCredits?.used ?? 0;
+  const remainingCredits = authCredits?.remaining ?? 0;
   const creditDetails =
     totalCredits > 0
       ? localize(
