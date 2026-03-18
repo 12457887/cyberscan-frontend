@@ -17,6 +17,8 @@ import {
   LayoutDashboard,
   BellRing,
   FileText,
+  DatabaseZap,
+  Network,
 } from 'lucide-react';
 
 import { Language, useLanguage } from '@/contexts/LanguageContext';
@@ -105,6 +107,22 @@ function HomeContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
           'Control every site from one interface — perfect for agencies and MSSPs.'
         ),
       },
+      {
+        emoji: '🌐',
+        title: localize('Scan réseau', 'Network Scan'),
+        description: localize(
+          'Analyse complète de l\'infrastructure réseau : ports ouverts, services exposés, bannières, SSL/TLS et vulnérabilités réseau. Pas seulement applicatif — CyberScan inspecte la couche réseau pour détecter les surfaces d\'attaque cachées.',
+          'Full network infrastructure analysis: open ports, exposed services, banners, SSL/TLS and network vulnerabilities. Not just application-level — CyberScan inspects the network layer to uncover hidden attack surfaces.'
+        ),
+      },
+      {
+        emoji: '🔓',
+        title: localize('Détection de fuites de données', 'Data Breach Detection'),
+        description: localize(
+          'Vérifiez si vos emails ou domaines ont été compromis dans des fuites de données. Accédez aux informations exposées : identifiants, mots de passe, sources.',
+          'Check if your emails or domains were compromised in data breaches. Access exposed details: credentials, passwords, sources.'
+        ),
+      },
     ],
     [localize]
   );
@@ -137,8 +155,8 @@ function HomeContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
         name: localize(plan.name.fr, plan.name.en).trim(),
         price: plan.price,
         period: plan.period ? localize(plan.period.fr, plan.period.en) : localize('/mois', '/month'),
-        features: (plan.features || []).slice(0, 5).map((feature) => localize(feature.fr, feature.en)),
-        highlight: plan.popular || plan.id === 'pro',
+        features: (plan.features || []).map((feature) => localize(feature.fr, feature.en)),
+        highlight: plan.popular ?? false,
         oldPrice:
           parsePriceValue(plan.price) > 0 ? `${Math.max(1, Math.round(parsePriceValue(plan.price) * 2))}€` : null,
         ctaHref: '/register',
@@ -155,6 +173,7 @@ function HomeContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
       period: '',
       features: [
         localize('Branding complet (logo, couleurs, sous-domaine)', 'Full branding (logo, colors, subdomain)'),
+        localize('Scan hebdomadaire automatique', 'Automatic weekly scan'),
         localize('Rapports PDF en marque blanche', 'White-label PDF reports'),
         localize('Accès API illimité', 'Unlimited API access'),
         localize('Support dédié & onboarding prioritaire', 'Dedicated support & priority onboarding'),
@@ -246,6 +265,36 @@ const dashboardFeatures = useMemo(
       imageWidth: 360,
       imageHeight: 210,
       imageMaxWidth: 550,
+    },
+
+    {
+      id: 'network-scan',
+      icon: Network,
+      label: localize('Scan réseau', 'Network Scan'),
+      title: localize('Scan réseau & infrastructure', 'Network & Infrastructure Scan'),
+      description: localize(
+        "Au-delà des vulnérabilités applicatives, CyberScan analyse l'ensemble de votre infrastructure réseau : découverte des ports ouverts, identification des services exposés (SSH, FTP, RDP, bases de données…), lecture des bannières, audit SSL/TLS, détection des configurations faibles et des services non chiffrés. Une vue complète de votre surface d'attaque réseau, pas seulement web.",
+        "Beyond application vulnerabilities, CyberScan analyses your full network infrastructure: open port discovery, exposed service identification (SSH, FTP, RDP, databases…), banner grabbing, SSL/TLS auditing, weak configuration detection and unencrypted service flagging. A complete view of your network attack surface — not just the web layer."
+      ),
+      image: '/network-scan.png',
+      imageWidth: 340,
+      imageHeight: 220,
+      imageMaxWidth: 420,
+    },
+
+    {
+      id: 'breach-detection',
+      icon: DatabaseZap,
+      label: localize('Détection de fuites de données', 'Data Breach Detection'),
+      title: localize('Détection de fuites de données', 'Data Breach Detection'),
+      description: localize(
+        "Vérifiez en temps réel si vos emails ou domaines ont été exposés dans des fuites de données. CyberScan interroge les bases de données de fuites connues pour identifier les identifiants compromis, mots de passe, noms d'utilisateur et sources d'exposition. Résultats détaillés avec nom de la fuite, date et données affectées.",
+        "Check in real time whether your emails or domains have been exposed in data breaches. CyberScan queries known breach databases to identify compromised credentials, passwords, usernames and exposure sources. Detailed results include breach name, date and affected data fields."
+      ),
+      image: '/check-domain.png',
+      imageWidth: 340,
+      imageHeight: 220,
+      imageMaxWidth: 420,
     },
 
     // ----------------------------------------------------------
@@ -351,46 +400,45 @@ const dashboardFeatures = useMemo(
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-sm">
       {/* NAV */}
-      <nav className="border-b border-slate-700 bg-slate-900/50 backdrop-blur-sm py-1">
+      <nav className="border-b border-slate-700/60 bg-slate-900/80 backdrop-blur-md py-1 sticky top-0 z-50 shadow-lg shadow-slate-950/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-14 items-center">
             <div className="flex items-center gap-2">
               <Logo width={60} height={60} className="!justify-start" />
-              <span className="text-lg font-semibold text-white">CyberScan</span>
+              <span className="text-lg font-bold text-white tracking-tight">CyberScan</span>
             </div>
 
-            <div className="flex gap-2 items-center text-xs">
-              <Button variant="ghost" className="text-white hover:text-blue-400 px-2" asChild>
-                <Link href="/#hero">{localize('Home', 'Home')}</Link>
-              </Button>
-              <Button variant="ghost" className="text-white hover:text-blue-400 px-2" asChild>
-                <Link href="#features">{localize('Fonctionnalités', 'Features')}</Link>
-              </Button>
-              <Button variant="ghost" className="text-white hover:text-blue-400 px-2" asChild>
-                <Link href="#specification">{localize('Spécifications', 'Specifications')}</Link>
-              </Button>
-              <Button variant="ghost" className="text-white hover:text-blue-400 px-2" asChild>
-                <Link href="#benefits">{localize('Bénéfices', 'Benefits')}</Link>
-              </Button>
-              <Button variant="ghost" className="text-white hover:text-blue-400 px-2" asChild>
-                <Link href="/#plans-preview">{localize('Plans', 'Plans')}</Link>
-              </Button>
+            <div className="flex gap-1 items-center text-xs">
+              {[
+                { href: '/#hero', label: localize('Home', 'Home') },
+                { href: '#features', label: localize('Fonctionnalités', 'Features') },
+                { href: '#specification', label: localize('Spécifications', 'Specifications') },
+                { href: '#benefits', label: localize('Bénéfices', 'Benefits') },
+                { href: '/#plans-preview', label: localize('Plans', 'Plans') },
+              ].map((item) => (
+                <Button key={item.href} variant="ghost" className="text-slate-300 hover:text-white hover:bg-slate-800/60 px-3 text-xs" asChild>
+                  <Link href={item.href}>{item.label}</Link>
+                </Button>
+              ))}
 
-              <Button variant="ghost" className="text-white hover:text-blue-400 px-2" asChild>
+              <div className="w-px h-5 bg-slate-700 mx-1" />
+
+              <Button variant="ghost" className="text-slate-300 hover:text-white px-3 text-xs" asChild>
                 <Link href="/login">{localize('Connexion', 'Sign in')}</Link>
               </Button>
 
-              <Button className="bg-blue-600 hover:bg-blue-700 px-3 py-1 text-xs" asChild>
+              <Button className="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 text-xs font-semibold rounded-lg shadow-md shadow-blue-900/40 transition-all" asChild>
                 <Link href="/register">{localize("S'inscrire", 'Sign up')}</Link>
               </Button>
-              <div className="flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800/80 px-2 py-1">
+
+              <div className="flex items-center gap-0.5 rounded-full border border-slate-700 bg-slate-800/80 px-1.5 py-1 ml-1">
                 {(['fr', 'en'] as Language[]).map((code) => (
                   <button
                     key={code}
                     type="button"
                     onClick={() => setLanguage(code)}
-                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors ${
-                      language === code ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-all ${
+                      language === code ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
                     }`}
                   >
                     {code.toUpperCase()}
@@ -404,39 +452,57 @@ const dashboardFeatures = useMemo(
 
       {/* HERO */}
       <main>
-        <section id="hero" className="py-16 px-4">
-          <div className="max-w-7xl mx-auto text-center">
+        <section id="hero" className="relative py-20 px-4 overflow-hidden">
+          {/* background glow */}
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[700px] h-[400px] bg-blue-600/20 rounded-full blur-[120px]" />
+            <div className="absolute top-20 right-0 w-[300px] h-[300px] bg-indigo-700/15 rounded-full blur-[100px]" />
+          </div>
 
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 leading-tight">
+          <div className="max-w-4xl mx-auto text-center relative z-10">
+            {/* badge */}
+            <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-1.5 text-xs text-blue-300 mb-6">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+              {localize('Plateforme de cybersécurité tout-en-un', 'All-in-one cybersecurity platform')}
+            </div>
+
+            <h1 className="text-4xl md:text-6xl font-extrabold text-white mb-5 leading-tight tracking-tight">
               {localize(
-                'Votre site est-il protégé contre les cybermenaces ?',
-                'Is your website protected against cyber threats?'
+                <>Votre site est-il protégé contre les <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">cybermenaces</span> ?</>,
+                <>Is your website safe from <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">cyber threats</span>?</>
               )}
             </h1>
 
-            <p className="text-base text-slate-300 max-w-2xl mx-auto mb-6">
+            <p className="text-base text-slate-300 max-w-2xl mx-auto mb-8 leading-relaxed">
               {localize(
-                'Scannez votre site et obtenez gratuitement une analyse.',
-                'Scan your website and get a free instant analysis.'
+                'Scannez votre site, détectez les fuites de données et analysez votre infrastructure réseau — gratuitement.',
+                'Scan your website, detect data breaches and analyse your network infrastructure — for free.'
               )}
             </p>
 
-            <div className="flex gap-3 justify-center mb-6">
-              <Button
-                size="sm"
-                className="bg-blue-600 text-white opacity-60 cursor-not-allowed px-4"
-                disabled
-              >
-                {localize('Commencer gratuitement', 'Start for free')}
-              </Button>
+            {/* trust badges */}
+            <div className="flex flex-wrap justify-center gap-4 mb-8 text-xs text-slate-400">
+              {[
+                { emoji: '🛡️', label: localize('Scan IA avancé', 'Advanced AI Scan') },
+                { emoji: '🌐', label: localize('Scan réseau', 'Network Scan') },
+                { emoji: '🔓', label: localize('Fuites de données', 'Data Breach') },
+                { emoji: '⚡', label: localize('Résultats en 30s', 'Results in 30s') },
+              ].map((b) => (
+                <span key={b.label} className="flex items-center gap-1.5 bg-slate-800/60 border border-slate-700/60 rounded-full px-3 py-1">
+                  <span>{b.emoji}</span>{b.label}
+                </span>
+              ))}
+            </div>
 
+            <div className="flex gap-3 justify-center mb-10">
               <Button
                 size="sm"
-                className="bg-slate-700 hover:bg-slate-600 text-white border border-slate-600 px-4"
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-6 py-2.5 text-sm font-semibold rounded-xl shadow-lg shadow-blue-900/40 transition-all"
                 asChild
               >
-                <Link href="/login">{localize('Voir la démo', 'See the demo')}</Link>
+                <Link href="/register">{localize('Commencer gratuitement', 'Start for free')}</Link>
               </Button>
+
             </div>
 
             <div className="max-w-xl mx-auto">
@@ -467,11 +533,11 @@ const dashboardFeatures = useMemo(
             {secureFeatureCards.map((feature) => (
               <div
                 key={feature.title as string}
-                className="rounded-3xl border border-slate-800 bg-gradient-to-br from-[#111d3a] to-[#0d142b] p-6 shadow-[0_20px_45px_rgba(2,6,23,0.45)] text-white"
+                className="group rounded-3xl border border-slate-700/60 bg-gradient-to-br from-[#111d3a] to-[#0d142b] p-6 shadow-[0_20px_45px_rgba(2,6,23,0.45)] text-white hover:border-blue-500/50 hover:shadow-[0_20px_60px_rgba(37,99,235,0.2)] transition-all duration-300 hover:-translate-y-1 cursor-default"
               >
-                <span className="text-3xl mb-3 inline-flex">{feature.emoji}</span>
-                <h3 className="text-lg font-semibold mb-2 text-white">{feature.title}</h3>
-                <p className="text-xs text-slate-300 leading-relaxed">{feature.description}</p>
+                <span className="text-3xl mb-4 inline-flex w-12 h-12 items-center justify-center rounded-2xl bg-slate-800/80 group-hover:bg-blue-500/20 transition-colors">{feature.emoji}</span>
+                <h3 className="text-base font-semibold mb-2 text-white">{feature.title}</h3>
+                <p className="text-xs text-slate-400 leading-relaxed group-hover:text-slate-300 transition-colors">{feature.description}</p>
               </div>
             ))}
           </div>
@@ -774,23 +840,35 @@ const dashboardFeatures = useMemo(
           </div>
         </section>
         {/* READY TO SCAN */}
-        <section className="py-16 px-4 bg-white text-slate-900 text-center text-sm">
-          <div className="max-w-5xl mx-auto">
-            <h2 className="text-2xl font-bold mb-3">
+        <section className="relative py-20 px-4 bg-[#060c1d] text-center text-sm overflow-hidden">
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-blue-700/20 rounded-full blur-[100px]" />
+          </div>
+          <div className="max-w-2xl mx-auto relative z-10">
+            <p className="text-[11px] uppercase tracking-[0.25em] text-blue-400 mb-3">
+              {localize('Commencez maintenant', 'Get started now')}
+            </p>
+            <h2 className="text-3xl font-extrabold text-white mb-4 leading-tight">
               {localize('Prêt à analyser vos vulnérabilités ?', 'Ready to scan for vulnerabilities?')}
             </h2>
-
-            <p className="text-slate-600 text-xs mb-6">
+            <p className="text-slate-400 text-sm mb-8">
               {localize(
-                "Rejoignez des milliers d'entreprises qui font confiance à CyberScan.",
-                'Join thousands of companies that trust CyberScan.'
+                "Rejoignez des milliers d'entreprises qui font confiance à CyberScan pour protéger leur infrastructure.",
+                'Join thousands of companies that trust CyberScan to protect their infrastructure.'
               )}
             </p>
-            <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2" asChild>
-              <Link href="/register">
-                {localize('Créer un compte gratuit', 'Create a free account')}
-              </Link>
-            </Button>
+            <div className="flex flex-wrap gap-3 justify-center">
+              <Button size="sm" className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-8 py-2.5 text-sm font-semibold rounded-xl shadow-lg shadow-blue-900/50 transition-all" asChild>
+                <Link href="/register">
+                  {localize('Créer un compte gratuit', 'Create a free account')}
+                </Link>
+              </Button>
+              <Button size="sm" className="bg-slate-800 hover:bg-slate-700 text-white border border-slate-600/60 px-8 py-2.5 text-sm rounded-xl" asChild>
+                <Link href="/login">
+                  {localize('Se connecter', 'Sign in')}
+                </Link>
+              </Button>
+            </div>
           </div>
         </section>
       </main>

@@ -264,8 +264,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <div className="flex">
         <aside className="hidden md:flex md:flex-shrink-0">
-          <div className="flex flex-col w-50 bg-[#1e293b] border-r border-slate-900 h-[calc(100vh-4rem)] sticky top-16">
-            <div className="flex-1 overflow-y-auto px-4 py-6 space-y-1 text-white">
+          <div className="flex flex-col w-56 bg-[#1e293b] border-r border-slate-800/60 h-[calc(100vh-4rem)] sticky top-16 shadow-xl">
+            <div className="flex-1 overflow-y-auto px-3 py-5 space-y-0.5 text-white scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
               {filteredNavigation.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
@@ -274,21 +274,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                    className={`group flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-150 relative ${
                       isActive
-                        ? 'bg-slate-800 text-white'
-                        : 'text-slate-200 hover:bg-slate-800 hover:text-white'
+                        ? 'bg-blue-600/20 text-white ring-1 ring-blue-500/30'
+                        : 'text-white hover:bg-slate-800/70 hover:text-white'
                     }`}
                   >
-                    <Icon className={`w-5 h-5 mr-3 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                    {label}
+                    {isActive && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-blue-500 rounded-r-full" />
+                    )}
+                    <Icon className={`w-4 h-4 mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-blue-300' : 'text-white/70 group-hover:text-white'}`} />
+                    <span className="leading-tight">{label}</span>
                   </Link>
                 );
               })}
 
               {profile?.role === 'admin' && (
                 <>
-                  <div className="border-t border-slate-800 my-4"></div>
+                  <div className="my-4 flex items-center gap-2 px-3">
+                    <div className="flex-1 border-t border-slate-700/60" />
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Admin</span>
+                    <div className="flex-1 border-t border-slate-700/60" />
+                  </div>
                   {ADMIN_NAV_ITEMS.map((item) => {
                     const Icon = item.icon;
                     const isActive = pathname === item.href;
@@ -296,24 +303,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       <Link
                         key={item.href}
                         href={item.href}
-                        className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                        className={`group flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-150 relative ${
                           isActive
-                            ? 'bg-orange-500/20 text-orange-200'
-                            : 'text-slate-200 hover:bg-slate-800'
+                            ? 'bg-orange-500/20 text-white ring-1 ring-orange-500/30'
+                            : 'text-white hover:bg-slate-800/70 hover:text-white'
                         }`}
                       >
-                        <Icon className={`w-5 h-5 mr-3 ${isActive ? 'text-orange-200' : 'text-slate-400'}`} />
-                        {t(item.key)}
+                        {isActive && (
+                          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-orange-500 rounded-r-full" />
+                        )}
+                        <Icon className={`w-4 h-4 mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-orange-300' : 'text-white/70 group-hover:text-white'}`} />
+                        <span className="leading-tight">{t(item.key)}</span>
                       </Link>
                     );
                   })}
                 </>
               )}
-              <div className="mt-6">
+              <div className="mt-6 px-1">
                 <UpgradeButton />
               </div>
             </div>
-
           </div>
         </aside>
 

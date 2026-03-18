@@ -1440,11 +1440,12 @@ function SubscriptionPageContent() {
           <CardContent className="space-y-3">
             <ul className="space-y-2 text-slate-800">
               {[
-                localize('Ajout du logo du client', 'Add your client logo'),
-                localize('Dashboard personnalisé (couleurs & branding)', 'Custom dashboard (colors & branding)'),
-                localize('Rapports PDF brandés', 'Branded PDF reports'),
-                localize('Domaine personnalisé (ex : scan.votredomaine.com)', 'Custom domain (e.g., scan.yourdomain.com)'),
-                localize('Solution idéale pour agences & MSSP', 'Ideal for agencies & MSSPs'),
+                localize('Branding complet (logo, couleurs, sous-domaine)', 'Full branding (logo, colors, subdomain)'),
+                localize('Scan hebdomadaire automatique', 'Automatic weekly scan'),
+                localize('Rapports PDF en marque blanche', 'White-label PDF reports'),
+                localize('Accès API illimité', 'Unlimited API access'),
+                localize('Support dédié & onboarding prioritaire', 'Dedicated support & priority onboarding'),
+                localize('Contrat multi-clients (agences, MSSP)', 'Multi-client contract (agencies, MSSPs)'),
               ].map((item) => (
                 <li key={item} className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-green-600 mt-0.5" />
