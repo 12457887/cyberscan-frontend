@@ -732,6 +732,32 @@ const handleOpenReport = (scan: Scan) => {
   window.open(url, '_blank', 'noopener,noreferrer');
 };
 
+const handleDownloadNetworkReport = async (scan: Scan, format: ReportFormat = 'pdf') => {
+  if (!scan.mongo_report_id) {
+    alert(localize("Rapport réseau non disponible.", 'Network report unavailable.'));
+    return;
+  }
+  try {
+    const apiUrl = `/api/generate-report-network/${scan.mongo_report_id}?report_format=${format}`;
+    const response = await fetch(apiUrl);
+    if (!response.ok) throw new Error(localize('Erreur lors du téléchargement du rapport réseau', 'Error downloading network report'));
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const timestamp = new Date().toISOString().split('T')[0];
+    const extension = format === 'xlsx' ? 'xlsx' : format === 'json' ? 'json' : 'pdf';
+    link.download = `rapport-network-${scan.site_name || scan.site_url}-${timestamp}.${extension}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  } catch (error: any) {
+    console.error('Erreur téléchargement rapport réseau :', error);
+    alert(localize('Erreur lors du téléchargement du rapport réseau : ', 'Error downloading network report: ') + error.message);
+  }
+};
+
 
   const getVulnerabilityTotal = (scan: Scan) => {
     if (typeof scan.vulnerabilities_count === 'number') {
@@ -1189,6 +1215,16 @@ const handleOpenReport = (scan: Scan) => {
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem onClick={() => openNetworkDialog(scan)}>
                                     {localize('Scan SSL/TLS', 'SSL/TLS scan')}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => handleDownloadNetworkReport(scan, 'pdf')}>
+                                    {localize('Réseau PDF', 'Network PDF')}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleDownloadNetworkReport(scan, 'xlsx')}>
+                                    {localize('Réseau XLSX', 'Network XLSX')}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleDownloadNetworkReport(scan, 'json')}>
+                                    {localize('Réseau JSON', 'Network JSON')}
                                   </DropdownMenuItem>
                                 </>
                               )}
