@@ -136,13 +136,76 @@ export async function POST(request: Request) {
       sanitizedPhoneNumber = phoneCheck.sanitized;
     }
 
+    // Chercher par userId d'abord, puis par email (cas: même personne, méthodes d'auth différentes)
+    let { data: existingProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('id, role, created_at, phone_number, full_name')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (!existingProfile) {
+      const { data: profileByEmail } = await supabaseAdmin
+        .from('profiles')
+        .select('*')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (profileByEmail && profileByEmail.id !== userId) {
+        // Un compte avec cet email existe déjà avec un autre id (autre méthode d'auth)
+        // Merge : migrer credits/subscriptions vers le nouvel id, supprimer l'ancien profil, créer le nouveau
+
+        // 1. Migrer credits et subscriptions vers le nouvel userId
+        await supabaseAdmin.from('credits').update({ user_id: userId }).eq('user_id', profileByEmail.id);
+        await supabaseAdmin.from('subscriptions').update({ user_id: userId }).eq('user_id', profileByEmail.id);
+
+        // 2. Supprimer l'ancien profil
+        await supabaseAdmin.from('profiles').delete().eq('id', profileByEmail.id);
+
+        // 3. Insérer le nouveau profil avec le bon userId en conservant les données existantes
+        const { data: mergedProfile, error: mergedError } = await supabaseAdmin
+          .from('profiles')
+          .insert({
+            id: userId,
+            email: profileByEmail.email,
+            full_name: sanitizedFullName || fullName || profileByEmail.full_name || null,
+            phone_number: sanitizedPhoneNumber ?? profileByEmail.phone_number ?? null,
+            role: profileByEmail.role || 'client',
+            created_at: profileByEmail.created_at,
+            updated_at: now,
+          })
+          .select('*')
+          .single();
+
+        if (mergedError) {
+          console.error('Profile merge insert error:', mergedError);
+          // Fallback: continuer avec un nouveau profil normal
+        } else {
+          // Récupérer les crédits existants
+          const { data: creditsRow } = await supabaseAdmin
+            .from('credits')
+            .select('*')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+          return NextResponse.json({
+            profile: mergedProfile,
+            credits: {
+              total: creditsRow?.total_credits ?? 0,
+              used: creditsRow?.used_credits ?? 0,
+              remaining: Math.max((creditsRow?.total_credits ?? 0) - (creditsRow?.used_credits ?? 0), 0),
+            },
+          });
+        }
+      }
+    }
+
     const profilePayload = {
       id: userId,
       email,
-      full_name: sanitizedFullName || fullName || null,
-      phone_number: sanitizedPhoneNumber,
-      role: 'client',
-      created_at: now,
+      full_name: sanitizedFullName || fullName || existingProfile?.full_name || null,
+      phone_number: sanitizedPhoneNumber ?? existingProfile?.phone_number ?? null,
+      role: existingProfile?.role || 'client',
+      created_at: existingProfile?.created_at || now,
       updated_at: now,
     };
 
@@ -157,43 +220,59 @@ export async function POST(request: Request) {
       throw profileError;
     }
 
-    const creditsPayload = {
-      user_id: userId,
-      total_credits: 3,
-      used_credits: 0,
-      last_reset_at: now,
-      created_at: now,
-      updated_at: now,
-    };
-
-    const { data: creditsRow, error: creditsError } = await supabaseAdmin
+    // Crédits — créer seulement si inexistants (ne jamais écraser)
+    const { data: existingCredits } = await supabaseAdmin
       .from('credits')
-      .upsert(creditsPayload)
       .select('*')
-      .single();
+      .eq('user_id', userId)
+      .maybeSingle();
 
-    if (creditsError) {
-      console.error('Bootstrap credits error:', creditsError);
-      throw creditsError;
+    let creditsRow = existingCredits;
+    if (!existingCredits) {
+      const { data: newCredits, error: creditsError } = await supabaseAdmin
+        .from('credits')
+        .insert({
+          user_id: userId,
+          total_credits: 3,
+          used_credits: 0,
+          last_reset_at: now,
+          created_at: now,
+          updated_at: now,
+        })
+        .select('*')
+        .single();
+
+      if (creditsError) {
+        console.error('Bootstrap credits error:', creditsError);
+        throw creditsError;
+      }
+      creditsRow = newCredits;
     }
 
-    const subscriptionPayload = {
-      user_id: userId,
-      plan_type: 'free',
-      status: 'active',
-      credits_limit: 3,
-      started_at: now,
-      created_at: now,
-      updated_at: now,
-    };
-
-    const { error: subscriptionError } = await supabaseAdmin
+    // Abonnement — créer seulement si inexistant (ne jamais écraser)
+    const { data: existingSubscription } = await supabaseAdmin
       .from('subscriptions')
-      .upsert(subscriptionPayload);
+      .select('user_id')
+      .eq('user_id', userId)
+      .maybeSingle();
 
-    if (subscriptionError) {
-      console.error('Bootstrap subscription error:', subscriptionError);
-      throw subscriptionError;
+    if (!existingSubscription) {
+      const { error: subscriptionError } = await supabaseAdmin
+        .from('subscriptions')
+        .insert({
+          user_id: userId,
+          plan_type: 'free',
+          status: 'active',
+          credits_limit: 3,
+          started_at: now,
+          created_at: now,
+          updated_at: now,
+        });
+
+      if (subscriptionError) {
+        console.error('Bootstrap subscription error:', subscriptionError);
+        throw subscriptionError;
+      }
     }
 
     return NextResponse.json({

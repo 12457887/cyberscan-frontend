@@ -39,6 +39,10 @@ export default function ProfilePage() {
   }, [profile]);
 
   const userEmail = user?.email || profile?.email || email;
+  const isGoogleUser =
+    user?.app_metadata?.provider === 'google' ||
+    user?.identities?.some((id) => id.provider === 'google') ||
+    false;
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,28 +104,33 @@ export default function ProfilePage() {
     }
 
     if (!otpSent) {
-      if (!oldPassword) {
-        setPasswordMessage({
-          type: 'error',
-          text: localize('Ancien mot de passe requis.', 'Current password is required.'),
-        });
-        return;
-      }
-
       setPasswordLoading(true);
       try {
-        const { error: authError } = await supabase.auth.signInWithPassword({
-          email: userEmail,
-          password: oldPassword,
-        });
-        if (authError) {
-          setPasswordMessage({
-            type: 'error',
-            text: localize('Ancien mot de passe incorrect.', 'Current password is incorrect.'),
+        // Utilisateur email/password : vérifier l'ancien mot de passe d'abord
+        if (!isGoogleUser) {
+          if (!oldPassword) {
+            setPasswordMessage({
+              type: 'error',
+              text: localize('Ancien mot de passe requis.', 'Current password is required.'),
+            });
+            setPasswordLoading(false);
+            return;
+          }
+          const { error: authError } = await supabase.auth.signInWithPassword({
+            email: userEmail,
+            password: oldPassword,
           });
-          return;
+          if (authError) {
+            setPasswordMessage({
+              type: 'error',
+              text: localize('Ancien mot de passe incorrect.', 'Current password is incorrect.'),
+            });
+            setPasswordLoading(false);
+            return;
+          }
         }
 
+        // Envoyer OTP de confirmation (pour les deux types)
         const response = await fetch('/service/auth', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -286,6 +295,16 @@ export default function ProfilePage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleUpdatePassword} className="space-y-4">
+              {isGoogleUser && (
+                <div className="text-sm text-blue-700 bg-blue-50 p-3 rounded-md">
+                  {localize(
+                    'Votre compte est connecté via Google. Vous pouvez définir un mot de passe pour vous connecter également par email.',
+                    'Your account is linked to Google. You can set a password to also sign in with email.'
+                  )}
+                </div>
+              )}
+
+              {!isGoogleUser && (
               <div className="space-y-2">
                 <Label htmlFor="oldPassword">{localize('Ancien mot de passe', 'Current password')}</Label>
                 <div className="relative">
@@ -310,6 +329,7 @@ export default function ProfilePage() {
                   </button>
                 </div>
               </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="newPassword">{localize('Nouveau mot de passe', 'New password')}</Label>

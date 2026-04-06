@@ -65,9 +65,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const { data: sessionData } = await supabase.auth.getSession();
           const accessToken = sessionData?.session?.access_token;
+          if (!accessToken) return null;
           const response = await fetch("/service/credits/sync", {
             method: "POST",
-            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+            headers: { Authorization: `Bearer ${accessToken}` },
           });
           if (!response.ok) {
             return null;
@@ -167,13 +168,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    --------------------------*/
   const loadProfile = async (userId: string) => {
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const authUser = sessionData?.session?.user;
+      const candidateFullName =
+        authUser?.user_metadata?.full_name ||
+        authUser?.user_metadata?.name ||
+        authUser?.email?.split("@")[0] ||
+        null;
+
       const { data } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", userId)
         .maybeSingle();
 
-      if (data) setProfile(data);
+      const needsBootstrap = !data || !data.email;
+
+      if (needsBootstrap && authUser?.email) {
+        const bootstrapResponse = await fetch("/service/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            email: authUser.email,
+            fullName: candidateFullName,
+          }),
+        });
+
+        if (bootstrapResponse.ok) {
+          const bootstrapData = await bootstrapResponse.json().catch(() => null);
+          if (bootstrapData?.profile) {
+            setProfile(bootstrapData.profile);
+          } else if (data) {
+            setProfile(data);
+          }
+        } else {
+          console.error("Error bootstrapping OAuth profile:", await bootstrapResponse.text());
+          if (data) setProfile(data);
+        }
+      } else if (data) {
+        setProfile(data);
+      }
 
       await loadCredits(userId);
     } catch (error) {
@@ -202,7 +237,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    --------------------------*/
   const signInWithOtp = async (email: string, shouldCreateUser = false): Promise<AuthResponse> => {
     const emailRedirectTo =
-      typeof window !== "undefined" ? `${window.location.origin}/login` : undefined;
+      typeof window !== "undefined" ? `${window.location.origin}/dashboard` : undefined;
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -371,17 +406,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * GOOGLE LOGIN
    --------------------------*/
   const signInWithGoogle = async (): Promise<AuthResponse> => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo:
-          typeof window !== "undefined"
-            ? `${window.location.origin}/dashboard`
-            : undefined,
-      },
-    });
+    try {
+      const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+      if (!clientId) {
+        return { error: true, message: 'NEXT_PUBLIC_GOOGLE_CLIENT_ID non configuré' };
+      }
 
-    return { error, message: error?.message };
+      // Générer un nonce pour sécuriser l'échange
+      const nonce = crypto.randomUUID();
+      const encoder = new TextEncoder();
+      const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(nonce));
+      const hashedNonce = Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      const redirectUri = `${window.location.origin}/auth/callback`;
+      const state = crypto.randomUUID();
+      sessionStorage.setItem('google_oauth_nonce', nonce);
+      sessionStorage.setItem('google_oauth_state', state);
+
+      const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: 'openid email profile',
+        nonce: hashedNonce,
+        state,
+        access_type: 'offline',
+        prompt: 'select_account',
+      });
+
+      window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+      return { error: null };
+    } catch (error: any) {
+      return { error, message: error?.message };
+    }
   };
 
   /** -------------------------
@@ -402,7 +461,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setProfile(null);
     setCredits(null);
-    router.push("/dashboard");
+    router.push("/login");
   };
 
   return (

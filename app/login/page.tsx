@@ -7,7 +7,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import Link from 'next/link';
@@ -29,6 +29,8 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const [error, setError] = useState('');
   const [oauthLoading, setOauthLoading] = useState(false);
   const [otpCooldownUntil, setOtpCooldownUntil] = useState<number | null>(null);
+  const [resendSuccess, setResendSuccess] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
   const { signIn, signInWithGoogle, signInWithOtp, verifyOtp } = useAuth();
   const router = useRouter();
@@ -38,14 +40,18 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const requiresRecaptcha = Boolean(recaptchaSiteKey);
 
   useEffect(() => {
-    if (!otpCooldownUntil) return;
-    const delay = otpCooldownUntil - Date.now();
-    if (delay <= 0) {
-      setOtpCooldownUntil(null);
+    if (!otpCooldownUntil) {
+      setCooldownSeconds(0);
       return;
     }
-    const timer = setTimeout(() => setOtpCooldownUntil(null), delay);
-    return () => clearTimeout(timer);
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((otpCooldownUntil - Date.now()) / 1000));
+      setCooldownSeconds(remaining);
+      if (remaining <= 0) setOtpCooldownUntil(null);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
   }, [otpCooldownUntil]);
 
   const isEmailNotConfirmed = (authError: any) => {
@@ -119,7 +125,22 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
 
       const message = String(error.message || '');
       if (message.toLowerCase().includes('invalid login credentials')) {
-        setError(localize('Email ou mot de passe incorrect.', 'Your credentials are incorrect.'));
+        // Vérifier si le compte existe
+        const checkRes = await fetch('/service/auth/check-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        const { exists } = await checkRes.json().catch(() => ({ exists: true }));
+
+        if (!exists) {
+          setError(localize(
+            'Aucun compte trouvé avec cet email. Veuillez vous inscrire.',
+            'No account found with this email. Please sign up.'
+          ));
+        } else {
+          setError(localize('Mot de passe incorrect.', 'Incorrect password.'));
+        }
         setLoading(false);
         return;
       }
@@ -138,6 +159,7 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
     if (!options.silent) {
       setError('');
     }
+    setResendSuccess(false);
     setOtp('');
     setOtpLoading(true);
     setOtpType(mode);
@@ -168,6 +190,7 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
     }
 
     setOtpSent(true);
+    setResendSuccess(true);
     setOtpCooldownUntil(Date.now() + OTP_COOLDOWN_MS);
     setOtpLoading(false);
     return { ok: true };
@@ -208,7 +231,17 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
     );
 
     if (error) {
-      setError(error.message || localize('Code invalide', 'Invalid code'));
+      const msg = String(error.message || '').toLowerCase();
+      if (msg.includes('expired') || msg.includes('invalid') || msg.includes('expiré')) {
+        setError(
+          localize(
+            'Code expiré ou invalide. Cliquez sur "Renvoyer le code" pour en recevoir un nouveau.',
+            'Code expired or invalid. Click "Resend code" to receive a new one.'
+          )
+        );
+      } else {
+        setError(error.message || localize('Code invalide', 'Invalid code'));
+      }
       setLoading(false);
       return;
     }
@@ -319,13 +352,23 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
               <div className="space-y-2">
                 <Label>{localize('Code reçu par email', 'Code received by email')}</Label>
 
-                <InputOTP maxLength={6} value={otp} onChange={setOtp} containerClassName="justify-center">
+                <InputOTP maxLength={6} value={otp} onChange={(val) => { setOtp(val); setResendSuccess(false); }} containerClassName="justify-center">
                   <InputOTPGroup>
                     {Array.from({ length: 6 }).map((_, index) => (
                       <InputOTPSlot key={index} index={index} />
                     ))}
                   </InputOTPGroup>
                 </InputOTP>
+
+                {resendSuccess && (
+                  <p className="text-xs text-green-600">
+                    {localize(
+                      'Un nouveau code a été envoyé. Entrez le nouveau code ci-dessus.',
+                      'A new code has been sent. Enter the new code above.'
+                    )}
+                  </p>
+                )}
+
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-slate-500">
                     {localize("Vous n'avez pas reçu le code ?", "Didn't receive the code?")}
@@ -335,9 +378,11 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
                     variant="ghost"
                     size="sm"
                     onClick={() => handleSendOtp(otpType)}
-                    disabled={otpLoading || (otpCooldownUntil !== null && Date.now() < otpCooldownUntil)}
+                    disabled={otpLoading || cooldownSeconds > 0}
                   >
-                    {localize('Renvoyer le code', 'Resend code')}
+                    {cooldownSeconds > 0
+                      ? localize(`Renvoyer (${cooldownSeconds}s)`, `Resend (${cooldownSeconds}s)`)
+                      : localize('Renvoyer le code', 'Resend code')}
                   </Button>
                 </div>
               </div>
@@ -392,6 +437,26 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
             </div>
 
           </form>
+
+          {/* GOOGLE BUTTON */}
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={oauthLoading}
+            className="w-full flex items-center justify-center gap-3 border border-slate-200 rounded-lg px-4 py-2.5 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            {oauthLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <svg className="h-5 w-5" viewBox="0 0 24 24">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+            )}
+            {localize('Continuer avec Google', 'Continue with Google')}
+          </button>
 
           {/* SIGN UP LINK */}
           <div className="mt-6 text-center text-sm">

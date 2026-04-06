@@ -144,7 +144,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Impossible de charger abonnement.' }, { status: 500 });
     }
 
-    const subscription = pickBestSubscription(subscriptionRows as SubscriptionRow[]);
+    let subscription = pickBestSubscription(subscriptionRows as SubscriptionRow[]);
+
+    // Nouvel utilisateur OAuth (Google) : aucune subscription → créer le plan free
+    if (!subscription) {
+      const nowIso = new Date().toISOString();
+      const expiresIso = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      await adminClient.from('subscriptions').insert({
+        user_id: userId,
+        plan_type: 'free',
+        credits_limit: PLAN_CREDITS_LIMITS['free'],
+        status: 'active',
+        started_at: nowIso,
+        expires_at: expiresIso,
+        created_at: nowIso,
+        updated_at: nowIso,
+      });
+      subscription = {
+        plan_type: 'free',
+        credits_limit: PLAN_CREDITS_LIMITS['free'],
+        status: 'active',
+        started_at: nowIso,
+        created_at: nowIso,
+        updated_at: nowIso,
+        expires_at: expiresIso,
+      } as SubscriptionRow;
+    }
+
     const planType = subscription?.plan_type ?? null;
     const fallbackLimit =
       planType && typeof PLAN_CREDITS_LIMITS[planType] === 'number'

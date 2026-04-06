@@ -30,9 +30,20 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user) {
-      loadNotifications();
-    }
+    if (!user) return;
+
+    loadNotifications();
+
+    const channel = supabase
+      .channel(`notifications-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'alerts', filter: `user_id=eq.${user.id}` },
+        () => { loadNotifications(); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [user]);
 
   const getAccessToken = async (): Promise<string | undefined> => {
@@ -124,42 +135,101 @@ export default function NotificationsPage() {
   };
 
   const translateAlertContent = (alert: Alert) => {
-    if (language === 'fr') {
-      return { title: alert.title, message: alert.message };
-    }
+    const isFr = language === 'fr';
 
-    if (alert.type === 'subscription') {
-      const planMatch = alert.message.match(/plan\s+([a-z]+)/i);
-      const planId = planMatch?.[1];
+    // Scan lancé / Scan started
+    // FR: "Le scan de {name} ({url}) a été lancé avec succès."
+    // EN: "Scan for {name} ({url}) started successfully."
+    const scanStartedMatch =
+      alert.message.match(/Le scan de (.+?) \((.+?)\) a été lancé/) ||
+      alert.message.match(/Scan for (.+?) \((.+?)\) started successfully/);
+    if (scanStartedMatch) {
+      const [, name, url] = scanStartedMatch;
       return {
-        title: 'Subscription updated',
-        message: planId
-          ? `Your subscription has been confirmed for the ${planId} plan.`
-          : 'Your subscription has been updated successfully.',
+        title: isFr ? 'Scan lancé' : 'Scan started',
+        message: isFr
+          ? `Le scan de ${name} (${url}) a été lancé avec succès.`
+          : `Scan for ${name} (${url}) started successfully.`,
       };
     }
 
-    if (alert.type === 'scan_complete') {
+    // Scan relancé / Scan relaunched
+    // FR: "Relance du scan pour {name}."
+    // EN: "Scan relaunched for {name}."
+    const scanRelaunchedMatch =
+      alert.message.match(/Relance du scan pour (.+?)\./) ||
+      alert.message.match(/Scan relaunched for (.+?)\./);
+    if (scanRelaunchedMatch) {
+      const [, name] = scanRelaunchedMatch;
       return {
-        title: 'Scan completed',
-        message: 'Your security scan has finished. Review the report for more details.',
+        title: isFr ? 'Scan relancé' : 'Scan relaunched',
+        message: isFr
+          ? `Relance du scan pour ${name}.`
+          : `Scan relaunched for ${name}.`,
       };
     }
 
-    if (alert.type === 'vulnerability_found') {
+    // Abonnement mis à jour / Subscription updated
+    // FR: "Votre abonnement a été mis à jour vers le plan {plan}."
+    // EN: "Your subscription has been updated to the {plan} plan."
+    const subUpdatedMatch =
+      alert.message.match(/mis à jour vers le plan (\w+)/) ||
+      alert.message.match(/updated to the (\w+) plan/);
+    if (subUpdatedMatch) {
+      const [, plan] = subUpdatedMatch;
       return {
-        title: 'New vulnerability detected',
-        message: 'We detected new vulnerabilities on your target. Please review the latest scan.',
+        title: isFr ? 'Abonnement mis à jour' : 'Subscription updated',
+        message: isFr
+          ? `Votre abonnement a été mis à jour vers le plan ${plan}.`
+          : `Your subscription has been updated to the ${plan} plan.`,
       };
     }
 
-    if (alert.type === 'system') {
+    // Annulation programmée / Cancellation scheduled
+    // FR: "Votre abonnement restera actif jusqu'au {date}, puis repassera..."
+    // EN: "Your subscription will remain active until {date} and then revert..."
+    const subCancelledMatch =
+      alert.message.match(/restera actif jusqu'au (.+?),/) ||
+      alert.message.match(/remain active until (.+?) and then/);
+    if (subCancelledMatch) {
+      const [, date] = subCancelledMatch;
       return {
-        title: 'System notification',
-        message: alert.message || 'Important information regarding your account.',
+        title: isFr ? 'Annulation programmée' : 'Cancellation scheduled',
+        message: isFr
+          ? `Votre abonnement restera actif jusqu'au ${date}, puis repassera automatiquement sur l'offre Free.`
+          : `Your subscription will remain active until ${date} and then revert to the Free plan automatically.`,
       };
     }
 
+    // Scan terminé sans vulnérabilité
+    // FR: "Le scan de {hostname} est terminé. Aucune vulnérabilité détectée."
+    const scanCleanMatch = alert.message.match(/Le scan de (.+?) est terminé\. Aucune vulnérabilité/);
+    if (scanCleanMatch || alert.type === 'scan_complete') {
+      const hostname = scanCleanMatch?.[1] ?? '';
+      return {
+        title: isFr ? 'Scan terminé' : 'Scan completed',
+        message: isFr
+          ? `Le scan de ${hostname} est terminé. Aucune vulnérabilité détectée.`
+          : `Scan for ${hostname} completed. No vulnerabilities detected.`,
+      };
+    }
+
+    // Scan terminé avec vulnérabilités
+    // FR: "Le scan de {hostname} est terminé. {n} vulnérabilité(s) détectée(s) (niveau : {risk})."
+    const scanVulnMatch = alert.message.match(/Le scan de (.+?) est terminé\. (\d+) vulnérabilité.+niveau\s*:\s*(\w+)/);
+    if (scanVulnMatch || alert.type === 'vulnerability_found') {
+      const hostname = scanVulnMatch?.[1] ?? '';
+      const count = scanVulnMatch?.[2] ?? '';
+      const risk = scanVulnMatch?.[3] ?? '';
+      return {
+        title: isFr ? 'Vulnérabilités détectées' : 'Vulnerabilities detected',
+        message: isFr
+          ? `Le scan de ${hostname} est terminé. ${count} vulnérabilité(s) détectée(s) (niveau : ${risk}).`
+          : `Scan for ${hostname} completed. ${count} vulnerability(ies) found (level: ${risk}).`,
+      };
+    }
+
+    // Fallback — retourne le contenu brut de la DB
     return { title: alert.title, message: alert.message };
   };
 

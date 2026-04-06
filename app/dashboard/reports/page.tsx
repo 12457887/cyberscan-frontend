@@ -387,9 +387,10 @@ export default function ReportsPage() {
         try {
           const { data: sessionData } = await supabase.auth.getSession();
           const accessToken = sessionData?.session?.access_token;
+          if (!accessToken) return null;
           const response = await fetch('/service/credits/sync', {
             method: 'POST',
-            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+            headers: { Authorization: `Bearer ${accessToken}` },
           });
           if (!response.ok) {
             return null;

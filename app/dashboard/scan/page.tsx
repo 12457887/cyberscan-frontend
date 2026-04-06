@@ -29,8 +29,8 @@ const PLAN_CONCURRENCY: Record<string, number> = {
 };
 const LIGHT_SCAN_CREDIT_COST = 1;
 const FULL_SCAN_CREDIT_COST = 3;
-const FULL_SCAN_PLANS = new Set(['admin']);
-const FULL_TOOL_SCAN_PLANS = new Set(['admin']);
+const FULL_SCAN_PLANS = new Set(['pro', 'enterprise', 'admin']);
+const FULL_TOOL_SCAN_PLANS = new Set(['pro', 'enterprise', 'admin']);
 
 const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
 const FINISHED_STATUSES = new Set(['completed', 'failed']);
@@ -261,9 +261,10 @@ export default function ScanPage() {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) return null;
       const response = await fetch('/service/credits/sync', {
         method: 'POST',
-        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (!response.ok) {
         return null;
@@ -473,8 +474,8 @@ export default function ScanPage() {
       if (scanType === 'complete' && !canUseFullScan) {
         setError(
           localize(
-            'Le scan complet est réservé au plan Admin.',
-            'Full scans are available on the Admin plan only.'
+            'Le scan complet est disponible à partir du plan Pro.',
+            'Full scans are available on Pro and Premium plans.'
           )
         );
         setLoading(false);
@@ -1183,23 +1184,11 @@ export default function ScanPage() {
                         <p className="text-xs text-slate-500 mt-1">{activeToolCopy.light.meta}</p>
                       </div>
                     </div>
-                    {isAdmin && (
-                      <div
-                        className={`flex items-start space-x-3 p-4 border rounded-lg ${
-                          canUseFullToolScan ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-60 cursor-not-allowed'
-                        }`}
-                      >
-                        <RadioGroupItem
-                          value="full"
-                          id="tool-full"
-                          className="mt-1"
-                          disabled={!canUseFullToolScan}
-                        />
+                    {canUseFullToolScan && (
+                      <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-slate-50 cursor-pointer">
+                        <RadioGroupItem value="full" id="tool-full" className="mt-1" />
                         <div className="flex-1">
-                          <Label
-                            htmlFor="tool-full"
-                            className={`flex items-center ${canUseFullToolScan ? 'cursor-pointer' : 'cursor-not-allowed'}`}
-                          >
+                          <Label htmlFor="tool-full" className="flex items-center cursor-pointer">
                             <ShieldCheck className="w-4 h-4 mr-2 text-emerald-600" />
                             <span className="font-medium">{activeToolCopy.full.title}</span>
                           </Label>
@@ -1258,18 +1247,11 @@ export default function ScanPage() {
                         </p>
                       </div>
                     </div>
-                    {isAdmin && (
-                      <div
-                        className={`flex items-start space-x-3 p-4 border rounded-lg ${
-                          canUseFullScan ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-60 cursor-not-allowed'
-                        }`}
-                      >
-                        <RadioGroupItem value="complete" id="complete" className="mt-1" disabled={!canUseFullScan} />
+                    {canUseFullScan && (
+                      <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-slate-50 cursor-pointer">
+                        <RadioGroupItem value="complete" id="complete" className="mt-1" />
                         <div className="flex-1">
-                          <Label
-                            htmlFor="complete"
-                            className={`flex items-center ${canUseFullScan ? 'cursor-pointer' : 'cursor-not-allowed'}`}
-                          >
+                          <Label htmlFor="complete" className="flex items-center cursor-pointer">
                             <ShieldCheck className="w-4 h-4 mr-2 text-emerald-600" />
                             <span className="font-medium">{localize('Scan Complet', 'Full scan')}</span>
                           </Label>

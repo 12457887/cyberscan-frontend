@@ -79,22 +79,46 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (!user) return;
+    const updatePresence = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      await fetch('/service/presence', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+    };
+    updatePresence();
+    const interval = setInterval(updatePresence, 2 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
     const fetchUnreadCount = async () => {
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData?.session?.access_token;
-        const res = await fetch('/api/alerts', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          cache: 'no-store',
-        });
-        if (res.ok) {
-          const alerts = await res.json();
-          setUnreadCount(alerts.filter((a: { is_read: boolean }) => !a.is_read).length);
-        }
+        const { data, error } = await supabase
+          .from('alerts')
+          .select('id', { count: 'exact' })
+          .eq('user_id', user.id)
+          .eq('is_read', false);
+        if (!error) setUnreadCount(data?.length ?? 0);
       } catch {}
     };
+
     fetchUnreadCount();
-  }, [user]);
+
+    const channel = supabase
+      .channel(`alerts-unread-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'alerts', filter: `user_id=eq.${user.id}` },
+        () => { fetchUnreadCount(); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user, pathname]);
 
   const creditDisplay =
     credits
