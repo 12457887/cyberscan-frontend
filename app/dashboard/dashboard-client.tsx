@@ -782,7 +782,7 @@ export default function DashboardPageClient() {
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
             {localize('Tableau de bord', 'Dashboard')}
           </h1>
           <p className="text-slate-600 mt-1">
@@ -1028,13 +1028,13 @@ export default function DashboardPageClient() {
                 {localize('URL, CMS, mode, niveau de risque, date et statut', 'URL, CMS, mode, risk level, date and status')}
               </CardDescription>
             </CardHeader>
-            <CardContent className="p-0">
+            <CardContent className="p-0 overflow-x-auto">
               {scans.length === 0 ? (
                 <div className="py-8 text-center text-sm text-slate-600">
                   {localize('Aucun scan disponible', 'No scans available')}
                 </div>
               ) : (
-                <Table>
+                <Table className="min-w-[520px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>{localize('URL du site', 'Site URL')}</TableHead>
@@ -1060,7 +1060,7 @@ export default function DashboardPageClient() {
                           </TableCell>
                           <TableCell>{cmsDisplay}</TableCell>
                           <TableCell className="capitalize">
-                            {scanModeLabels[scan.scan_type]}
+                            {(scanModeLabels as Record<string, string>)[scan.scan_type] ?? scan.scan_type}
                           </TableCell>
                           <TableCell>{getRiskBadge(scan.risk_level)}</TableCell>
                           <TableCell>{formatDateTime(scan.created_at)}</TableCell>

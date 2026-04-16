@@ -11,8 +11,13 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CalendarClock, Trash2, ToggleLeft, ToggleRight, Plus, RefreshCw } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { CalendarClock, Trash2, ToggleLeft, ToggleRight, Plus, RefreshCw, CalendarIcon } from 'lucide-react';
 import { formatDateDMY } from '@/lib/date';
+import { format, addDays } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
 
 export default function ScheduledScansPage() {
   const { user } = useAuth();
@@ -22,7 +27,19 @@ export default function ScheduledScansPage() {
   const [schedules, setSchedules] = useState<ScheduledScan[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ site_url: '', site_name: '', scan_type: 'light', frequency: 'weekly' });
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [form, setForm] = useState({
+    site_url: '',
+    site_name: '',
+    scan_type: 'light',
+    frequency: 'weekly',
+    start_date: null as Date | null,
+  });
+
+  // Dates désactivées : aujourd'hui et avant
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = addDays(today, 1);
 
   const getToken = async () => {
     const { data } = await supabase.auth.getSession();
@@ -57,15 +74,24 @@ export default function ScheduledScansPage() {
     setSaving(true);
     try {
       const headers = await authHeaders();
+      const body: Record<string, unknown> = {
+        site_url: form.site_url,
+        site_name: form.site_name,
+        scan_type: form.scan_type,
+        frequency: form.frequency,
+      };
+      if (form.start_date) {
+        body.start_date = format(form.start_date, 'yyyy-MM-dd');
+      }
       const res = await fetch('/api/scheduled-scans', {
         method: 'POST',
         headers,
-        body: JSON.stringify(form),
+        body: JSON.stringify(body),
       });
       if (res.ok) {
         const created = await res.json();
         setSchedules(prev => [created, ...prev]);
-        setForm({ site_url: '', site_name: '', scan_type: 'light', frequency: 'weekly' });
+        setForm({ site_url: '', site_name: '', scan_type: 'light', frequency: 'weekly', start_date: null });
       }
     } catch (e) {
       console.error(e);
@@ -112,7 +138,10 @@ export default function ScheduledScansPage() {
         {/* Form */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Plus className="w-5 h-5" />{loc('Nouveau scan planifié', 'New scheduled scan')}</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5" />
+              {loc('Nouveau scan planifié', 'New scheduled scan')}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -153,6 +182,72 @@ export default function ScheduledScansPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Date de départ */}
+              <div className="md:col-span-2 space-y-1">
+                <Label className="flex items-center gap-1">
+                  <CalendarIcon className="w-4 h-4 text-blue-500" />
+                  {loc('Date de départ', 'Start date')}
+                  <span className="text-slate-400 text-xs font-normal ml-1">
+                    {loc('(optionnel — par défaut : demain)', '(optional — default: tomorrow)')}
+                  </span>
+                </Label>
+                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={cn(
+                        'w-full md:w-64 justify-start text-left font-normal border-slate-200',
+                        !form.start_date && 'text-slate-400'
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {form.start_date
+                        ? format(form.start_date, 'dd MMMM yyyy', { locale: fr })
+                        : loc('Choisir une date de départ', 'Pick a start date')}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={form.start_date ?? undefined}
+                      onSelect={(date) => {
+                        setForm(f => ({ ...f, start_date: date ?? null }));
+                        setCalendarOpen(false);
+                      }}
+                      disabled={(date) => date < tomorrow}
+                      defaultMonth={tomorrow}
+                      initialFocus
+                    />
+                    {form.start_date && (
+                      <div className="border-t p-2 text-center">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-slate-500 text-xs"
+                          onClick={() => {
+                            setForm(f => ({ ...f, start_date: null }));
+                            setCalendarOpen(false);
+                          }}
+                        >
+                          {loc('Réinitialiser (demain)', 'Reset (tomorrow)')}
+                        </Button>
+                      </div>
+                    )}
+                  </PopoverContent>
+                </Popover>
+                {form.start_date && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    {loc(
+                      `Premier scan le ${format(form.start_date, 'dd/MM/yyyy')} — ensuite ${form.frequency === 'weekly' ? 'chaque semaine' : 'chaque mois'}.`,
+                      `First scan on ${format(form.start_date, 'MM/dd/yyyy')} — then ${form.frequency === 'weekly' ? 'every week' : 'every month'}.`
+                    )}
+                  </p>
+                )}
+              </div>
+
               <div className="md:col-span-2">
                 <Button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
                   {saving ? loc('Création...', 'Creating...') : loc('Créer le scan planifié', 'Create scheduled scan')}

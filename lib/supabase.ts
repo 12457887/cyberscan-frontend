@@ -54,12 +54,14 @@ export type Scan = {
   user_id: string;
   site_name: string;
   site_url: string;
-  scan_type: 'light' | 'complete';
+  scan_type: 'light' | 'complete' | 'network_ssl' | 'network_quick' | 'network_full' | string;
+  mode?: 'light' | 'complete' | 'quick' | 'full' | string | null;
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
   risk_level: 'low' | 'medium' | 'high' | 'critical' | null;
   cms_type: string | null;
   vulnerabilities_count: number;
   mongo_report_id: string | null;
+  backend_scan_id: string | null;
   started_at: string;
   completed_at: string | null;
   created_at: string;

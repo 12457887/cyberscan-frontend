@@ -34,6 +34,7 @@ const FULL_TOOL_SCAN_PLANS = new Set(['pro', 'enterprise', 'admin']);
 
 const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
 const FINISHED_STATUSES = new Set(['completed', 'failed']);
+const NETWORK_SCAN_MODE_MAP_KEY = 'network_scan_mode_map';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type SubscriptionRow = {
@@ -335,6 +336,8 @@ export default function ScanPage() {
     mode: 'ssl' | 'network',
     scanMode: 'light' | 'full' = 'full'
   ) => {
+    if (!user) return;
+
     if (scanMode === 'full' && !canUseFullToolScan) {
       setNetworkError(
         localize(
@@ -346,13 +349,11 @@ export default function ScanPage() {
     }
     setNetworkError('');
     setNetworkLoading(true);
-    setNetworkDialogMode(mode);
     setActiveTool(mode === 'network' ? 'network' : 'ssl');
-    setNetworkDialogResult(null);
+
     const requiredCredits = scanMode === 'full' ? FULL_SCAN_CREDIT_COST : LIGHT_SCAN_CREDIT_COST;
     let creditsReserved = false;
     try {
-
       if (!DISABLE_CREDIT_CHECK) {
         const hasCredits = await ensureCreditsAvailable(
           requiredCredits,
@@ -373,11 +374,40 @@ export default function ScanPage() {
           setNetworkLoading(false);
           return;
         }
-
         creditsReserved = true;
       }
 
       const normalizedUrl = normalizeSingleUrl(siteUrl);
+      const hostname = (() => { try { return new URL(normalizedUrl).hostname; } catch { return normalizedUrl; } })();
+      const scanTypeLabel = mode === 'ssl' ? 'network_ssl' : (scanMode === 'light' ? 'network_quick' : 'network_full');
+
+      // Create Supabase scan row (same as CMS scans)
+      const { data: scanRows, error: scanError } = await supabase
+        .from('scans')
+        .insert([{
+          user_id: user.id,
+          site_name: hostname,
+          site_url: normalizedUrl,
+          scan_type: scanTypeLabel,
+          status: 'pending',
+        }])
+        .select();
+
+      if (scanError || !scanRows || scanRows.length === 0) {
+        throw new Error(localize('Impossible de créer l\'enregistrement de scan.', 'Unable to create scan record.'));
+      }
+      const scanRow = scanRows[0];
+      const frontendScanId: string = scanRow.id;
+
+      try {
+        const raw = window.sessionStorage.getItem(NETWORK_SCAN_MODE_MAP_KEY);
+        const existing = raw ? JSON.parse(raw) as Record<string, string> : {};
+        existing[frontendScanId] = scanMode === 'full' ? 'complete' : 'light';
+        window.sessionStorage.setItem(NETWORK_SCAN_MODE_MAP_KEY, JSON.stringify(existing));
+      } catch (storageError) {
+        console.warn('Impossible de mémoriser le mode du scan réseau/SSL:', storageError);
+      }
+
       const networkMode = scanMode === 'light' ? 'quick' : 'full';
       const endpoint =
         mode === 'ssl'
@@ -385,8 +415,8 @@ export default function ScanPage() {
           : '/api/scan-network';
       const payload =
         mode === 'ssl'
-          ? { url: normalizedUrl, full_ssl: scanMode === 'full' }
-          : { url: normalizedUrl, mode: networkMode };
+          ? { url: normalizedUrl, full_ssl: scanMode === 'full', frontend_scan_id: frontendScanId, user_id: user.id }
+          : { url: normalizedUrl, mode: networkMode, frontend_scan_id: frontendScanId, user_id: user.id };
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -396,6 +426,8 @@ export default function ScanPage() {
 
       if (!response.ok) {
         const text = await response.text();
+        // Mark scan row as failed
+        await supabase.from('scans').update({ status: 'failed' }).eq('id', frontendScanId);
         if (!DISABLE_CREDIT_CHECK && creditsReserved && user?.id) {
           await adjustCredits(-requiredCredits);
           creditsReserved = false;
@@ -403,15 +435,11 @@ export default function ScanPage() {
         throw new Error(text || localize('Échec du scan réseau.', 'Network scan failed.'));
       }
 
-      const data = await response.json();
-      setNetworkDialogMode(mode);
-      setNetworkDialogResult(data);
-      setNetworkDialogTarget(normalizedUrl);
-      setNetworkDialogOpen(true);
+      // Redirect to reports page so user can monitor progress (same as CMS scans)
+      router.push('/dashboard/reports');
     } catch (err) {
       if (!DISABLE_CREDIT_CHECK && creditsReserved && user?.id) {
         await adjustCredits(-requiredCredits);
-        creditsReserved = false;
       }
       setNetworkError(
         err instanceof Error
@@ -443,7 +471,8 @@ export default function ScanPage() {
         }
         const best = pickBestSubscription(data as SubscriptionRow[]);
         if (best?.plan_type) {
-          setPlanType(best.plan_type);
+          // Use functional update to avoid overriding 'admin' set by a concurrent effect
+          setPlanType((current) => (current === 'admin' ? 'admin' : best.plan_type!));
         }
       });
   }, [user, profile?.role]);
@@ -1018,7 +1047,8 @@ export default function ScanPage() {
         <p className="text-xs uppercase text-slate-400">
           {localize('Ports et services', 'Open ports & services')}
         </p>
-        <Table>
+        <div className="overflow-x-auto">
+        <Table className="min-w-[480px]">
           <TableHeader>
             <TableRow>
               <TableHead>Host</TableHead>
@@ -1044,6 +1074,7 @@ export default function ScanPage() {
             ))}
           </TableBody>
         </Table>
+        </div>
       </div>
     );
   };
@@ -1321,7 +1352,14 @@ export default function ScanPage() {
               </DialogDescription>
             </DialogHeader>
 
-            {!networkScanPayload ? (
+            {(isSslLoading || isNetworkLoading) ? (
+              <div className="flex flex-col items-center gap-3 py-8 text-slate-600">
+                <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+                <p className="text-sm">
+                  {localize('Scan en cours, veuillez patienter…', 'Scan in progress, please wait…')}
+                </p>
+              </div>
+            ) : !networkScanPayload ? (
               <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
                 {localize('Aucun résultat réseau disponible.', 'No network results available.')}
               </div>

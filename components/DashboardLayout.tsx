@@ -176,10 +176,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <nav className="bg-[#1e293b] border-b border-slate-800 text-white sticky top-0 z-50">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 flex items-center gap-3">
-                <Logo width={65} height={65} className="!justify-start" />
-                <span className="text-xl font-bold text-white">{t('common.appName')}</span>
+            <div className="flex items-center min-w-0">
+              <div className="flex-shrink-0 flex items-center gap-2">
+                <Logo width={48} height={48} className="!justify-start" />
+                <span className="text-base sm:text-xl font-bold text-white truncate">{t('common.appName')}</span>
               </div>
             </div>
 
@@ -241,44 +241,73 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         {mobileMenuOpen && (
-          <div className="md:hidden border-t border-slate-800 bg-[#111827] text-white">
-          <div className="px-2 pt-2 pb-3 space-y-1">
-            {filteredNavigation.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="block px-3 py-2 rounded-md text-base font-medium text-slate-100 hover:bg-slate-900"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  {t(item.key)}
-                </Link>
-              ))}
+          <div className="md:hidden border-t border-slate-800 bg-[#111827] text-white max-h-[80vh] overflow-y-auto">
+            <div className="px-2 pt-2 pb-3 space-y-1">
+              {filteredNavigation.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium ${isActive ? 'bg-blue-600/20 text-white' : 'text-slate-100 hover:bg-slate-900'}`}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <Icon className="w-4 h-4 flex-shrink-0" />
+                    {t(item.key)}
+                  </Link>
+                );
+              })}
+
+              {profile?.role === 'admin' && (
+                <>
+                  <div className="my-2 flex items-center gap-2 px-3">
+                    <div className="flex-1 border-t border-slate-700/60" />
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Admin</span>
+                    <div className="flex-1 border-t border-slate-700/60" />
+                  </div>
+                  {ADMIN_NAV_ITEMS.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname === item.href;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium ${isActive ? 'bg-orange-500/20 text-white' : 'text-slate-100 hover:bg-slate-900'}`}
+                        onClick={() => setMobileMenuOpen(false)}
+                      >
+                        <Icon className="w-4 h-4 flex-shrink-0" />
+                        {t(item.key)}
+                      </Link>
+                    );
+                  })}
+                </>
+              )}
+
               <div className="px-3 py-2">
                 <UpgradeButton />
               </div>
-              <div className="px-3 py-2 space-y-3">
-                <label htmlFor="language-select-mobile" className="text-xs uppercase tracking-wide text-slate-300">
-                  {t('language.label')}
-                </label>
-                <select
-                  id="language-select-mobile"
-                  value={language}
-                  onChange={(event) => setLanguage(event.target.value as Language)}
-                  className="mt-1 block w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                >
-                  <option value="fr">{t('language.short.fr')}</option>
-                  <option value="en">{t('language.short.en')}</option>
-                </select>
+              <div className="px-3 py-2 space-y-2">
                 <div className="flex items-center gap-2 rounded-full bg-slate-900 border border-slate-700 px-3 py-1 text-xs font-medium text-blue-200">
                   <Zap className="w-4 h-4 text-blue-300" />
                   <span className="text-slate-100">{t('header.creditsLabel')}</span>
                   <span className="text-white">{creditDisplay}</span>
                 </div>
+                <select
+                  id="language-select-mobile"
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value as Language)}
+                  className="block w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="fr">{t('language.short.fr')}</option>
+                  <option value="en">{t('language.short.en')}</option>
+                </select>
               </div>
               <button
                 onClick={signOut}
-                className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-slate-100 hover:bg-slate-900"
+                className="flex w-full items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-slate-100 hover:bg-slate-900"
               >
+                <LogOut className="w-4 h-4 flex-shrink-0" />
                 {t('nav.logout')}
               </button>
             </div>
@@ -350,7 +379,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </aside>
 
-        <main className="flex-1 p-6">
+        <main className="flex-1 p-3 sm:p-4 md:p-6 min-w-0">
           <div className="max-w-7xl mx-auto">
             {children}
           </div>

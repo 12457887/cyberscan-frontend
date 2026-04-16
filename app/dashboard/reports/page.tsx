@@ -35,6 +35,7 @@ const FULL_SCAN_CREDIT_COST = 3;
 const ACTIVE_STATUSES = new Set(['pending', 'in_progress']);
 const FINISHED_STATUSES = new Set(['completed', 'failed']);
 const PENDING_FULL_SCAN_KEY = 'pending_full_scan_ids';
+const NETWORK_SCAN_MODE_MAP_KEY = 'network_scan_mode_map';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitForScanCompletion(scanIds: Array<string | number>, maxAttempts = 60, intervalMs = 5000) {
@@ -70,6 +71,59 @@ async function waitForScanCompletion(scanIds: Array<string | number>, maxAttempt
 
 const getScanCreditCost = (scanType?: string | null) =>
   scanType === 'complete' ? FULL_SCAN_CREDIT_COST : LIGHT_SCAN_CREDIT_COST;
+
+type ScanDisplaySource = {
+  id?: string | null;
+  scan_type?: string | null;
+  mode?: string | null;
+};
+
+const getScanDisplayType = (scan?: ScanDisplaySource | null) => {
+  const scanType = String(scan?.scan_type || '').trim().toLowerCase();
+
+  if (scanType === 'network_ssl') return 'ssl/tls';
+  if (scanType.startsWith('network_')) return 'reseau';
+  return 'web';
+};
+
+const getScanDisplayTypeLabel = (scan?: ScanDisplaySource | null, localize?: <T,>(fr: T, en: T) => T) => {
+  const type = getScanDisplayType(scan);
+
+  if (type === 'ssl/tls') return 'SSL/TLS';
+  if (type === 'reseau') return localize ? localize('Réseau', 'Network') : 'Reseau';
+  return 'Web';
+};
+
+const getScanTypeBadgeClass = (scan?: ScanDisplaySource | null) => {
+  const type = getScanDisplayType(scan);
+
+  if (type === 'ssl/tls') {
+    return 'border-cyan-200 bg-cyan-50 text-cyan-800';
+  }
+  if (type === 'reseau') {
+    return 'border-indigo-200 bg-indigo-50 text-indigo-800';
+  }
+  return 'border-slate-200 bg-white text-slate-700';
+};
+
+const getScanDisplayMode = (scan?: ScanDisplaySource | null, modeOverrides?: Record<string, string>) => {
+  const overrideMode = scan?.id ? modeOverrides?.[scan.id] : undefined;
+  const mode = String(overrideMode || scan?.mode || '').trim().toLowerCase();
+  const scanType = String(scan?.scan_type || '').trim().toLowerCase();
+
+  if (mode === 'light' || mode === 'quick') return 'light';
+  if (mode === 'complete' || mode === 'full') return 'complete';
+
+  if (scanType === 'light' || scanType.endsWith('_quick')) return 'light';
+  if (scanType === 'complete' || scanType.endsWith('_full')) return 'complete';
+
+  return 'light';
+};
+
+const getScanDisplayModeLabel = (scan?: ScanDisplaySource | null, modeOverrides?: Record<string, string>) => {
+  const mode = getScanDisplayMode(scan, modeOverrides);
+  return mode === 'complete' ? 'Complete' : 'Light';
+};
 
 export default function ReportsPage() {
   const { user, refreshCredits } = useAuth();
@@ -121,6 +175,7 @@ export default function ReportsPage() {
   const [networkDialogError, setNetworkDialogError] = useState<string | null>(null);
   const [networkDialogScan, setNetworkDialogScan] = useState<Scan | null>(null);
   const [networkDialogReport, setNetworkDialogReport] = useState<any | null>(null);
+  const [networkScanModeMap, setNetworkScanModeMap] = useState<Record<string, string>>({});
 
   const updatePendingFullScanIds = (ids: string[]) => {
     setPendingFullScanIds(ids);
@@ -144,6 +199,20 @@ export default function ReportsPage() {
     } catch (storageError) {
       console.warn('Impossible de lire les scans complets en attente:', storageError);
       window.sessionStorage.removeItem(PENDING_FULL_SCAN_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.sessionStorage.getItem(NETWORK_SCAN_MODE_MAP_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        setNetworkScanModeMap(parsed as Record<string, string>);
+      }
+    } catch (storageError) {
+      console.warn('Impossible de lire les modes des scans réseau/SSL:', storageError);
     }
   }, []);
 
@@ -662,32 +731,35 @@ export default function ReportsPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'completed':
-        return <Badge className="bg-green-600">{statusLabels.completed}</Badge>;
+        return <Badge className="border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">{statusLabels.completed}</Badge>;
       case 'failed':
-        return <Badge variant="destructive">{statusLabels.failed}</Badge>;
+        return <Badge className="border border-red-200 bg-red-50 text-red-700 hover:bg-red-50">{statusLabels.failed}</Badge>;
       case 'in_progress':
-        return <Badge className="bg-blue-600">{statusLabels.in_progress}</Badge>;
+        return <Badge className="border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-50">{statusLabels.in_progress}</Badge>;
       case 'pending':
-        return <Badge className="bg-yellow-600 text-black">{statusLabels.pending}</Badge>;
+        return <Badge className="border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50">{statusLabels.pending}</Badge>;
       default:
-        return <Badge variant="secondary">{status}</Badge>;
+        return <Badge variant="secondary" className="border border-slate-200 bg-slate-100 text-slate-700">{status}</Badge>;
     }
   };
 
 const getRiskBadge = (risk: string | null) => {
   switch (risk) {
-    case 'critical': return <Badge variant="destructive">{riskLabels.critical}</Badge>;
-    case 'high': return <Badge className="bg-orange-500">{riskLabels.high}</Badge>;
-    case 'medium': return <Badge className="bg-yellow-500 text-black">{riskLabels.medium}</Badge>;
-    case 'low': return <Badge className="bg-green-500">{riskLabels.low}</Badge>;
-    default: return <Badge variant="secondary">{riskLabels.na}</Badge>;
+    case 'critical': return <Badge className="border border-red-200 bg-red-50 text-red-700 hover:bg-red-50">{riskLabels.critical}</Badge>;
+    case 'high': return <Badge className="border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-50">{riskLabels.high}</Badge>;
+    case 'medium': return <Badge className="border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50">{riskLabels.medium}</Badge>;
+    case 'low': return <Badge className="border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">{riskLabels.low}</Badge>;
+    default: return <Badge variant="secondary" className="border border-slate-200 bg-slate-100 text-slate-700">{riskLabels.na}</Badge>;
   }
 };
 
 type ReportFormat = 'pdf' | 'json' | 'xlsx';
 
+const NETWORK_SCAN_TYPES = new Set(['network_ssl', 'network_quick', 'network_full']);
+const isNetworkOnlyScan = (scan: Scan) => NETWORK_SCAN_TYPES.has(scan.scan_type);
+
 const canDownloadReport = (scan: Scan) => (
-  scan.status === 'completed' && !!scan.completed_at && !!scan.mongo_report_id
+  scan.status === 'completed' && !!scan.mongo_report_id
 );
 
 const handleDownloadReport = async (scan: Scan, format: ReportFormat = 'pdf') => {
@@ -747,7 +819,8 @@ const handleDownloadNetworkReport = async (scan: Scan, format: ReportFormat = 'p
     link.href = url;
     const timestamp = new Date().toISOString().split('T')[0];
     const extension = format === 'xlsx' ? 'xlsx' : format === 'json' ? 'json' : 'pdf';
-    link.download = `rapport-network-${scan.site_name || scan.site_url}-${timestamp}.${extension}`;
+    const reportPrefix = scan.scan_type === 'network_ssl' ? 'ssl_tls' : 'network';
+    link.download = `${reportPrefix}-${scan.site_name || scan.site_url}-${timestamp}.${extension}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -825,7 +898,7 @@ const handleDownloadNetworkReport = async (scan: Scan, format: ReportFormat = 'p
       <div className="space-y-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900">
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
               {localize('Mes scans', 'My scans')}
             </h1>
             <p className="text-slate-600 mt-1">
@@ -1150,100 +1223,184 @@ const handleDownloadNetworkReport = async (scan: Scan, format: ReportFormat = 'p
             </CardContent>
           </Card>
         ) : filteredScans.length > 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>{localize('Historique complet', 'Full history')}</CardTitle>
-              <CardDescription>
-                {localize('Vision synthétique de vos derniers scans', 'Summary view of your latest scans')}
-              </CardDescription>
+          <Card className="overflow-hidden border-slate-200/80 shadow-[0_18px_50px_-28px_rgba(15,23,42,0.28)]">
+            <CardHeader className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_28%),linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] pb-6">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500 shadow-sm">
+                    {localize('Centre de rapports', 'Reports hub')}
+                  </div>
+                  <CardTitle className="text-4xl font-semibold tracking-tight text-slate-950">
+                    {localize('Historique complet', 'Full history')}
+                  </CardTitle>
+                  <CardDescription className="max-w-2xl text-base text-slate-600">
+                    {localize('Vision synthétique de vos derniers scans, avec un aperçu plus clair du type, du mode et du niveau de risque.', 'A clearer summary of your latest scans, with better visibility into type, mode, and risk level.')}
+                  </CardDescription>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{localize('Total', 'Total')}</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-950">{filteredScans.length}</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{localize('Terminés', 'Completed')}</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-950">
+                      {filteredScans.filter((scan) => scan.status === 'completed').length}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{localize('Mode complet', 'Complete mode')}</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-950">
+                      {filteredScans.filter((scan) => getScanDisplayMode(scan, networkScanModeMap) === 'complete').length}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{localize('Risque élevé', 'High risk')}</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-950">
+                      {filteredScans.filter((scan) => ['critical', 'high'].includes(scan.risk_level || '')).length}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="p-0">
-              <Table className="text-sm">
+            <CardContent className="bg-white p-4 md:p-5">
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <div className="overflow-x-auto">
+              <Table className="min-w-[920px] text-sm">
                 <TableHeader>
-                  <TableRow>
-                    <TableHead className="pl-4">URL</TableHead>
-                    <TableHead className="whitespace-nowrap">{localize('Site', 'Site')}</TableHead>
-                    <TableHead className="whitespace-nowrap">{localize('Scan', 'Scan')}</TableHead>
-                    <TableHead className="whitespace-nowrap">{localize('Statut', 'Status')}</TableHead>
-                    <TableHead className="whitespace-nowrap">{localize('Date', 'Date')}</TableHead>
-                    <TableHead className="text-center whitespace-nowrap">{localize('Vulnér.', 'Vulns')}</TableHead>
-                    <TableHead className="whitespace-nowrap">{localize('Risque', 'Risk')}</TableHead>
-                    <TableHead className="whitespace-nowrap">{localize('Export', 'Export')}</TableHead>
+                  <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
+                    <TableHead className="pl-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">URL</TableHead>
+                    <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{localize('Site', 'Site')}</TableHead>
+                    <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{localize('Scan', 'Scan')}</TableHead>
+                    <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{localize('Mode', 'Mode')}</TableHead>
+                    <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{localize('Statut', 'Status')}</TableHead>
+                    <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{localize('Date', 'Date')}</TableHead>
+                    <TableHead className="text-center whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{localize('Vulnér.', 'Vulns')}</TableHead>
+                    <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{localize('Risque', 'Risk')}</TableHead>
+                    <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{localize('Export', 'Export')}</TableHead>
                     <TableHead></TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredScans.map((scan) => (
-                    <TableRow key={`table-${scan.id}`}>
-                      <TableCell className="pl-4 text-slate-900 truncate max-w-[160px]">
-                        {scan.site_url}
+                    <TableRow key={`table-${scan.id}`} className="border-slate-100 transition-colors hover:bg-slate-50/70">
+                      <TableCell className="pl-4">
+                        <div className="max-w-[220px]">
+                          <p className="truncate font-semibold text-slate-900">{scan.site_url}</p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            {localize('ID', 'ID')} {String(scan.id).slice(0, 8)}
+                          </p>
+                        </div>
                       </TableCell>
-                      <TableCell className="capitalize whitespace-nowrap">{scan.cms_type || localize('Inconnu', 'Unknown')}</TableCell>
+                      <TableCell className="capitalize whitespace-nowrap text-slate-700">
+                        {scan.cms_type || localize('Inconnu', 'Unknown')}
+                      </TableCell>
                       <TableCell className="whitespace-nowrap">
-                        <Badge variant={scan.scan_type === 'complete' ? 'default' : 'secondary'} className="capitalize text-xs px-1.5 py-0">
-                          {scan.scan_type === 'complete' ? 'Complete' : 'Light'}
+                        <Badge
+                          variant="outline"
+                          className={`px-2.5 py-1 text-[11px] font-semibold tracking-[0.02em] ${getScanTypeBadgeClass(scan)}`}
+                        >
+                          {getScanDisplayTypeLabel(scan, localize)}
                         </Badge>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">{getStatusBadge(scan.status)}</TableCell>
-                      <TableCell className="whitespace-nowrap">{formatDateTime(scan.created_at)}</TableCell>
-                      <TableCell className="text-center font-semibold whitespace-nowrap">
+                      <TableCell className="whitespace-nowrap">
+                        <div className="flex items-center">
+                          <Badge
+                            variant={getScanDisplayMode(scan, networkScanModeMap) === 'complete' ? 'default' : 'secondary'}
+                            className={
+                              getScanDisplayMode(scan, networkScanModeMap) === 'complete'
+                                ? 'bg-slate-900 px-2.5 py-1 text-[11px] font-semibold tracking-[0.02em] text-white hover:bg-slate-900'
+                                : 'bg-slate-100 px-2.5 py-1 text-[11px] font-semibold tracking-[0.02em] text-slate-700 hover:bg-slate-100'
+                            }
+                          >
+                            {getScanDisplayModeLabel(scan, networkScanModeMap)}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <div className="flex items-center">
+                          {getStatusBadge(scan.status)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-slate-700">{formatDateTime(scan.created_at)}</TableCell>
+                      <TableCell className="text-center font-semibold whitespace-nowrap text-lg text-slate-900">
                         {getVulnerabilityTotal(scan)}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">{getRiskBadge(scan.risk_level)}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <div className="flex items-center">
+                          {getRiskBadge(scan.risk_level)}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         {canDownloadReport(scan) ? (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="outline" size="sm">
-                                <Download className="w-4 h-4 mr-1" />
-                                {localize('Exporter', 'Export')}
+                              <Button variant="outline" size="icon" className="border-slate-200 bg-white shadow-sm hover:bg-slate-50 w-8 h-8">
+                                <Download className="w-4 h-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-36">
-                              <DropdownMenuItem onClick={() => handleDownloadReport(scan, 'pdf')}>
-                                PDF
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleDownloadReport(scan, 'json')}>
-                                JSON
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleDownloadReport(scan, 'xlsx')}>
-                                XLSX
-                              </DropdownMenuItem>
-                              {scan.scan_type === 'complete' && (
+                            <DropdownMenuContent align="end" className="w-44">
+                              {isNetworkOnlyScan(scan) ? (
+                                // Pure network/SSL scans: download via generate-report-network
                                 <>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => openNetworkDialog(scan)}>
-                                    {localize('Scan SSL/TLS', 'SSL/TLS scan')}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
                                   <DropdownMenuItem onClick={() => handleDownloadNetworkReport(scan, 'pdf')}>
-                                    {localize('Réseau PDF', 'Network PDF')}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleDownloadNetworkReport(scan, 'xlsx')}>
-                                    {localize('Réseau XLSX', 'Network XLSX')}
+                                    PDF
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => handleDownloadNetworkReport(scan, 'json')}>
-                                    {localize('Réseau JSON', 'Network JSON')}
+                                    JSON
                                   </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleDownloadNetworkReport(scan, 'xlsx')}>
+                                    XLSX
+                                  </DropdownMenuItem>
+                                </>
+                              ) : (
+                                // CMS scans: main report + optional network report for 'complete'
+                                <>
+                                  <DropdownMenuItem onClick={() => handleDownloadReport(scan, 'pdf')}>
+                                    PDF
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleDownloadReport(scan, 'json')}>
+                                    JSON
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleDownloadReport(scan, 'xlsx')}>
+                                    XLSX
+                                  </DropdownMenuItem>
+                                  {scan.scan_type === 'complete' && (
+                                    <>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem onClick={() => openNetworkDialog(scan)}>
+                                        {localize('Scan SSL/TLS', 'SSL/TLS scan')}
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem onClick={() => handleDownloadNetworkReport(scan, 'pdf')}>
+                                        {localize('Réseau PDF', 'Network PDF')}
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleDownloadNetworkReport(scan, 'xlsx')}>
+                                        {localize('Réseau XLSX', 'Network XLSX')}
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleDownloadNetworkReport(scan, 'json')}>
+                                        {localize('Réseau JSON', 'Network JSON')}
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
                                 </>
                               )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         ) : (
-                          <span className="text-xs text-slate-400">
-                            {localize('En attente de rapport', 'Waiting for report')}
-                          </span>
+                          <Button variant="outline" size="icon" disabled className="border-slate-200 bg-slate-50 text-slate-400 w-8 h-8">
+                            <Download className="w-4 h-4" />
+                          </Button>
                         )}
                       </TableCell>
                       <TableCell>
                         <Button
-                          size="icon"
                           variant="ghost"
-                          title={localize('Relancer', 'Rescan')}
+                          size="icon"
+                          className="text-slate-600 hover:text-slate-900"
                           onClick={() => handleRescan(scan)}
                           disabled={rescanLoadingId === scan.id}
-                          className="h-8 w-8"
                         >
                           {rescanLoadingId === scan.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -1254,9 +1411,9 @@ const handleDownloadNetworkReport = async (scan: Scan, format: ReportFormat = 'p
                       </TableCell>
                       <TableCell>
                         <Button
-                          size="sm"
                           variant="ghost"
-                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                          size="icon"
+                          className="text-red-500 hover:text-red-600"
                           onClick={() => setDeleteConfirmScan(scan)}
                           disabled={deleteLoadingId === scan.id}
                         >
@@ -1271,6 +1428,8 @@ const handleDownloadNetworkReport = async (scan: Scan, format: ReportFormat = 'p
                   ))}
                 </TableBody>
               </Table>
+                </div>
+              </div>
             </CardContent>
           </Card>
         ) : (
