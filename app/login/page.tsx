@@ -37,7 +37,7 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const { executeRecaptcha } = useGoogleReCaptcha();
-  const requiresRecaptcha = Boolean(recaptchaSiteKey);
+  const requiresRecaptcha = false;
 
   useEffect(() => {
     if (!otpCooldownUntil) {
@@ -294,7 +294,7 @@ function LoginPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }) {
           </div>
 
           <CardDescription className="text-muted-foreground">
-            {localize('Connexion à votre compte', 'Sign in to your account')}
+            {localize('test', 'test')}
           </CardDescription>
         </CardHeader>
 

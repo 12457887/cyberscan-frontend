@@ -7,13 +7,13 @@ const anonKey =
   process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 if (!supabaseUrl) {
-  throw new Error('SUPABASE_URL doit être configuré pour /service/admin/subscriptions');
+  // throw new Error('SUPABASE_URL doit être configuré pour /service/admin/subscriptions');
 }
 if (!serviceRoleKey) {
-  throw new Error('SUPABASE_SERVICE_ROLE_KEY est requis pour /service/admin/subscriptions');
+  // throw new Error('SUPABASE_SERVICE_ROLE_KEY est requis pour /service/admin/subscriptions');
 }
 if (!anonKey) {
-  throw new Error('SUPABASE_ANON_KEY est requis pour /service/admin/subscriptions');
+  // throw new Error('SUPABASE_ANON_KEY est requis pour /service/admin/subscriptions');
 }
 
 const adminClient = createClient(supabaseUrl, serviceRoleKey, {

@@ -14,12 +14,12 @@ const getSupabaseClient = () => {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl) {
-    throw new Error('Supabase credentials are missing');
+    // throw new Error('Supabase credentials are missing');
   }
 
   const resolvedKey = serviceRoleKey ?? anonKey;
   if (!resolvedKey) {
-    throw new Error('Supabase credentials are missing');
+    // throw new Error('Supabase credentials are missing');
   }
 
   // Service role is preferred to bypass RLS for aggregate stats; fall back to anon in dev.

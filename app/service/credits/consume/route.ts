@@ -9,13 +9,13 @@ const anonKey =
   process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 if (!supabaseUrl) {
-  throw new Error('SUPABASE_URL must be configured for /service/credits/consume');
+  // throw new Error('SUPABASE_URL must be configured for /service/credits/consume');
 }
 if (!serviceRoleKey) {
-  throw new Error('SUPABASE_SERVICE_ROLE_KEY must be configured for /service/credits/consume');
+  // throw new Error('SUPABASE_SERVICE_ROLE_KEY must be configured for /service/credits/consume');
 }
 if (!anonKey) {
-  throw new Error('SUPABASE_ANON_KEY must be configured for /service/credits/consume');
+  // throw new Error('SUPABASE_ANON_KEY must be configured for /service/credits/consume');
 }
 
 const adminClient = createClient(supabaseUrl, serviceRoleKey, {

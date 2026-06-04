@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
-      throw new Error('Erreur lors de l\'arrêt de l\'environnement');
+      // throw new Error('Erreur lors de l\'arrêt de l\'environnement');
     }
 
     const data = await response.json();

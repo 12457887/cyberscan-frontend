@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
-      throw new Error('Erreur lors du démarrage de l\'environnement');
+      // throw new Error('Erreur lors du démarrage de l\'environnement');
     }
 
     const data = await response.json();

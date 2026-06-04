@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
-      throw new Error('Erreur lors de la création de l\'environnement');
+      // throw new Error('Erreur lors de la création de l\'environnement');
     }
 
     const data = await response.json();

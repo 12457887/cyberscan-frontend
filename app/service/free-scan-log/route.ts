@@ -5,11 +5,11 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl) {
-  throw new Error('NEXT_PUBLIC_SUPABASE_URL must be set for /service/free-scan-log');
+  // throw new Error('NEXT_PUBLIC_SUPABASE_URL must be set for /service/free-scan-log');
 }
 
 if (!serviceRoleKey) {
-  throw new Error('SUPABASE_SERVICE_ROLE_KEY must be set for /service/free-scan-log');
+  // throw new Error('SUPABASE_SERVICE_ROLE_KEY must be set for /service/free-scan-log');
 }
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);

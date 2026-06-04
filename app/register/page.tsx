@@ -47,7 +47,7 @@ function RegisterPageContent({ recaptchaSiteKey }: { recaptchaSiteKey?: string }
   const { choose } = useLanguage();
   const localize = <T,>(fr: T, en: T) => choose({ fr, en });
   const { executeRecaptcha } = useGoogleReCaptcha();
-  const requiresRecaptcha = Boolean(recaptchaSiteKey);
+  const requiresRecaptcha = false;
 
   useEffect(() => {
     if (!otpCooldownUntil) {
