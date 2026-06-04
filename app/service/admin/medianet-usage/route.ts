@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 // Proxy GET /service/admin/medianet-usage -> backend /admin/medianet-usage
-export const dynamic = 'force-dynamic';
 console.log('🔥 PROXY MEDIANET USAGE HIT');
 
 export async function GET(req: Request) {

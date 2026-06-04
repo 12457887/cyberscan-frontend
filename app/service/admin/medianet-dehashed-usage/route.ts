@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 // Proxy GET /service/admin/medianet-dehashed-usage -> backend /admin/medianet-dehashed-usage
-export const dynamic = 'force-dynamic';
 console.log('🔥 PROXY MEDIANET DEHASHED USAGE HIT');
 
 export async function GET(req: Request) {
