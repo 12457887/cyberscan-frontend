@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // app/service/generate-report/[id]/route.ts
 
 export async function GET(

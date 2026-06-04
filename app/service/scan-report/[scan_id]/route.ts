@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // Proxy route: forwards GET /service/scan-report/:scan_id to the backend FastAPI service
 
 export async function GET(

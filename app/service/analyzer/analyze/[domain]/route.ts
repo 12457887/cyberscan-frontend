@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { lookup } from 'dns/promises';
 import { NextRequest, NextResponse } from 'next/server';
 

@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // Proxy route: forwards POST /service/dehashed/check-domain to the backend FastAPI service
 
 export async function POST(req: Request) {

@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // Proxy route: forwards POST /service/scan-network to the backend FastAPI service
 
 export const maxDuration = 300;

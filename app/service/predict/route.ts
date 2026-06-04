@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     // URL du backend (peut être configurée dans les variables d'environnement)

@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 
 const recaptchaSecret = process.env.RECAPTCHA_SECRET_KEY;

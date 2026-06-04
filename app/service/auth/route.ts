@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { USERNAME_REQUIREMENTS_TEXT, validateUsername } from '@/lib/username';
