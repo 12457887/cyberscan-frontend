@@ -1,7 +1,44 @@
-- name: Deploy to k3s
+name: CI/CD CyberScan Frontend
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-push:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps --force
+
+      - name: Build Next.js
         env:
-          KUBECONFIG: /home/bi/.kube/config
+          NEXT_PUBLIC_SUPABASE_URL: https://havoxvbdbnqlqobkepux.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhdm94dmJkYm5xbHFvYmtlcHV4IiwicGFsZSI6ImFub24iLCJpYXQiOjE3NjEwMDAzODIsImV4cCI6MjA3NjU3NjM4Mn0.Uekwr49qYLMMF0s8S0uHT1UIGFHXydaikcdHE4DSMgE
+          NEXT_TELEMETRY_DISABLED: 1
+        run: npm run build
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ahmedaminehamden/cyberscan-frontend:latest
+
+      - name: Deploy to k3s
         run: |
-          kubectl get nodes
-          kubectl rollout restart deployment frontend-pod -n cyberscan
-          kubectl rollout status deployment frontend-pod -n cyberscan
+          kubectl rollout restart deployment/frontend-pod -n cyberscan
