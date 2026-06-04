@@ -2,6 +2,8 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package.json ./
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV CI=false
 RUN npm cache clean --force && npm install --legacy-peer-deps --force
 
 COPY . .
