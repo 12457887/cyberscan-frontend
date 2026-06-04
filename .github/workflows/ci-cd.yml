@@ -23,6 +23,8 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://havoxvbdbnqlqobkepux.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhdm94dmJkYm5xbHFvYmtlcHV4IiwicGFsZSI6ImFub24iLCJpYXQiOjE3NjEwMDAzODIsImV4cCI6MjA3NjU3NjM4Mn0.Uekwr49qYLMMF0s8S0uHT1UIGFHXydaikcdHE4DSMgE
+          SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhhdm94dmJkYm5xbHFvYmtlcHV4IiwicGFsZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MTAwMDM4MiwiZXhwIjoyMDc2NTc2MzgyfQ.LUNV6yjJ934q3plEm9sxS0eKYXynauYtv8hhdfNPxQ0
+          NEXT_PUBLIC_BACKEND_URL: http://fastapi-service:8000/api
           NEXT_TELEMETRY_DISABLED: 1
         run: npm run build
 
