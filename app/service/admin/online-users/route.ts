@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 export const dynamic = 'force-dynamic';
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';

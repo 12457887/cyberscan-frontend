@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 export const dynamic = 'force-dynamic';
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ log_id: string }> }) {

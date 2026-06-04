@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // Proxy route: forwards POST /service/admin/delete-user to the backend FastAPI service
 // The backend URL can be configured with the BACKEND_URL env var (defaults to http://localhost:8000)
 

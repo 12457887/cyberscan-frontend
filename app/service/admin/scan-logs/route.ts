@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // Proxy GET /service/admin/scan-logs -> backend /admin/scan-logs
 export const dynamic = 'force-dynamic';
 

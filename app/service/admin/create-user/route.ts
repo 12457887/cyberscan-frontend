@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';

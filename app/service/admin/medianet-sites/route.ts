@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 // Proxy GET /service/admin/medianet-sites -> backend /admin/medianet-sites
 export const dynamic = 'force-dynamic';
 
